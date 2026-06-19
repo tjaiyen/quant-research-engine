@@ -1,0 +1,41 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+# ----- mypy -----------------------------------------------------------------
+# Strict on math modules (where correctness most matters); lenient elsewhere
+# until type hints are sweeping more thoroughly.
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+ignore_missing_imports = true       # third-party stubs (Dash, plotly, hmmlearn)
+follow_imports = "silent"
+exclude = ["\\.venv/", "scripts/stress/", "tests/"]
+
+# Strict on the math heart of the system.
+[[tool.mypy.overrides]]
+module = [
+    "fundamental",
+    "models_fundamental",
+    "models_portfolio",
+    "models_quant",
+    "models_technical",
+    "quant_models",
+    "scoring_ars",
+    "scoring_legacy",
+    "industry_config",
+    "const",
+]
+disallow_untyped_defs = true
+warn_return_any = true
+
+# UI / app code: still permissive (Dash callbacks return mixed types).
+[[tool.mypy.overrides]]
+module = ["app", "ui.*"]
+disallow_untyped_defs = false

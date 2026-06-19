@@ -1,0 +1,16 @@
+# Phase J — regime-aware screener (SCREENER_BUILD_v3) extra deps.
+#
+# These are *also* declared in the project root requirements.txt so a
+# single `pip install -r requirements.txt` covers everything. This file
+# is kept for parity with the spec and as a quick reference.
+#
+# Notes:
+#   - hmmlearn already in root requirements (Phase A); no need to repeat.
+#   - pmdarima is OPTIONAL — the ARIMA signal falls back to statsmodels
+#     when ARIMA_USE_AUTO=False (the default). Enable it only if you
+#     want stepwise auto-order selection.
+
+statsmodels>=0.14.0,<1.0.0   # ARIMA + ADF stationarity test
+arch>=6.0.0,<8.999.0         # GARCH(1,1) volatility forecast
+pykalman>=0.9.7,<2.0.0       # Kalman filter (EMA fallback if missing)
+# pmdarima>=2.0.4,<3.0.0     # optional — auto-ARIMA stepwise search

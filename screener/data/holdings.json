@@ -1,0 +1,70 @@
+{
+  "_meta": {
+    "last_updated": "2026-05-10",
+    "source": "iShares/SPDR sector ETF top-20 holdings (manual snapshot)",
+    "update_cadence": "monthly",
+    "staleness_warning_days": 35,
+    "notes": "Sector keys MUST match screener.config.SECTOR_ETFS exactly (Gate 10). Each sector has exactly STOCKS_PER_SECTOR=20 large-cap tickers. Replace stale entries via tasks/audit_universe.py + tasks/seed_universe.py.",
+    "phase_l_plus_substitutions_2026_05_10": {
+      "HES": "CTRA (Coterra Energy) — Hess delisted (Chevron acquisition closed)",
+      "MRO": "DINO (HF Sinclair) — Marathon Oil delisted (ConocoPhillips acquisition closed Nov 2024)",
+      "MMC": "TRV (Travelers) — Marsh McLennan yfinance lookup failure",
+      "IPG": "ROKU (Roku Inc) — Interpublic yfinance lookup failure"
+    }
+  },
+  "Technology": [
+    "AAPL", "MSFT", "NVDA", "AVGO", "ORCL", "CRM", "AMD",  "ADBE",
+    "ACN",  "NOW",  "INTU", "CSCO", "IBM",  "QCOM", "TXN",  "AMAT",
+    "INTC", "MU",   "LRCX", "KLAC"
+  ],
+  "Healthcare": [
+    "LLY",  "UNH",  "JNJ",  "MRK",  "ABBV", "TMO",  "ABT",  "ISRG",
+    "AMGN", "PFE",  "DHR",  "BMY",  "GILD", "CVS",  "ELV",  "CI",
+    "MDT",  "BSX",  "REGN", "VRTX"
+  ],
+  "Financials": [
+    "BRK-B", "JPM",  "V",    "MA",   "BAC",  "WFC",  "GS",   "MS",
+    "AXP",   "BLK",  "C",    "SCHW", "CB",   "SPGI", "PGR",  "TRV",
+    "KKR",   "BX",   "CME",  "AON"
+  ],
+  "Energy": [
+    "XOM",  "CVX",  "COP",  "EOG",  "SLB",  "MPC",  "PSX",  "OXY",
+    "VLO",  "WMB",  "KMI",  "OKE",  "BKR",  "FANG", "DVN",  "HAL",
+    "CTRA", "TRGP", "DINO", "APA"
+  ],
+  "Industrials": [
+    "GE",   "CAT",  "RTX",  "HON",  "UNP",  "UPS",  "BA",   "LMT",
+    "ETN",  "ADP",  "DE",   "NOC",  "WM",   "EMR",  "CSX",  "NSC",
+    "ITW",  "GD",   "FDX",  "MMM"
+  ],
+  "Consumer_Discretionary": [
+    "AMZN", "TSLA", "HD",   "MCD",  "NKE",  "LOW",  "BKNG", "TJX",
+    "SBUX", "ORLY", "CMG",  "MAR",  "GM",   "F",    "ROST", "AZO",
+    "DHI",  "LEN",  "EBAY", "ABNB"
+  ],
+  "Consumer_Staples": [
+    "PG",   "COST", "KO",   "PEP",  "WMT",  "PM",   "MO",   "MDLZ",
+    "CL",   "TGT",  "KMB",  "GIS",  "ADM",  "STZ",  "KHC",  "HSY",
+    "KR",   "KDP",  "SYY",  "MNST"
+  ],
+  "Materials": [
+    "LIN",  "SHW",  "FCX",  "ECL",  "APD",  "NEM",  "CTVA", "NUE",
+    "DOW",  "DD",   "IFF",  "PPG",  "MLM",  "VMC",  "LYB",  "BALL",
+    "STLD", "ALB",  "FMC",  "AMCR"
+  ],
+  "Utilities": [
+    "NEE",  "SO",   "DUK",  "SRE",  "CEG",  "AEP",  "D",    "PCG",
+    "EXC",  "XEL",  "PEG",  "ED",   "WEC",  "EIX",  "AWK",  "DTE",
+    "ETR",  "ES",   "FE",   "AEE"
+  ],
+  "Real_Estate": [
+    "AMT",  "PLD",  "EQIX", "WELL", "SPG",  "PSA",  "O",    "DLR",
+    "CCI",  "CBRE", "EXR",  "AVB",  "VICI", "CSGP", "EQR",  "ARE",
+    "IRM",  "INVH", "VTR",  "MAA"
+  ],
+  "Communications": [
+    "META", "GOOGL","GOOG", "NFLX", "TMUS", "VZ",   "T",    "DIS",
+    "CMCSA","CHTR", "EA",   "TTWO", "WBD",  "OMC",  "ROKU", "NWS",
+    "NWSA", "FOXA", "FOX",  "MTCH"
+  ]
+}

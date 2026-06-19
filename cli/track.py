@@ -1,0 +1,218 @@
+"""cli/track.py — the `track` command (engine driver).
+
+Replaces the Dash app + Fly cron with local rituals:
+
+    track doctor                 off-Drive preflight (store local, vault canonical)
+    track refresh [--full]       pull watchlist prices + sector ETF performance (daily)
+    track seed [--full|--refresh] seed the 220-stock screener universe into the cache
+    track screen  [--retrain]    run the regime-aware screener (weekly)
+    track paper monitor          daily monitor — stops, decay rescore, equity snapshot
+    track paper cycle            monthly buy cycle (no-op outside the buy window)
+    track paper stop [--clear]   set / clear the trading halt flag
+    track report                 regenerate the Obsidian notes in `90 Tracker/`
+    track status                 quick terminal summary
+
+Every command that touches the DB or the vault runs `doctor` first and aborts
+on a non-zero result (the off-Drive invariant, enforced mechanically). The
+process chdir's to the repo root so the engine's relative paths resolve.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+os.chdir(REPO_ROOT)  # engine modules use paths relative to the repo root
+
+
+# ── Preflight gate ───────────────────────────────────────────────────────────
+
+def _preflight() -> None:
+    """Run doctor; abort the command on any unsafe path. Off-Drive invariant."""
+    import doctor
+
+    report = doctor.run()
+    if not report["all_safe"]:
+        print("✗ doctor preflight FAILED — refusing to touch the DB or vault.\n",
+              file=sys.stderr)
+        doctor.main([])  # human-readable detail
+        raise SystemExit(2)
+
+
+# ── Commands ─────────────────────────────────────────────────────────────────
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    import doctor
+
+    return doctor.main(["--json"] if args.json else [])
+
+
+def cmd_refresh(args: argparse.Namespace) -> int:
+    _preflight()
+    from tasks import refresh_prices, refresh_sectors
+
+    extra = ["--full"] if args.full else []
+    rc = refresh_prices.main(extra)
+    rc |= refresh_sectors.main(extra)
+    return rc
+
+
+def cmd_seed(args: argparse.Namespace) -> int:
+    _preflight()
+    from tasks import seed_universe
+
+    extra: list[str] = []
+    if args.refresh:
+        extra.append("--refresh")
+    elif args.full:
+        extra.append("--full")
+    return seed_universe.main(extra)
+
+
+def cmd_screen(args: argparse.Namespace) -> int:
+    _preflight()
+    from screener.screener_main import print_summary, run_screener
+
+    results = run_screener(force_retrain=args.retrain)
+    print_summary(results)
+    return 0
+
+
+def cmd_paper(args: argparse.Namespace) -> int:
+    _preflight()
+    if args.action == "monitor":
+        from auto_trader.scripts.daily_run import main as run
+        return run([])
+    if args.action == "cycle":
+        from auto_trader.scripts.monthly_run import main as run
+        return run([])
+    if args.action == "stop":
+        from auto_trader.scripts.emergency_stop import main as run
+        return run(["--clear"] if args.clear else [])
+    print(f"unknown paper action: {args.action}", file=sys.stderr)
+    return 2
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    _preflight()
+    from render.build import build_all
+    from render.markdown import tracker_dir
+
+    _write_readme_if_absent(tracker_dir())
+    summary = build_all()
+    print(f"Rendered {len(summary['written'])} notes → {summary['vault']}")
+    print(f"  screener run: {'yes' if summary['had_screener_run'] else 'none yet'} · "
+          f"positions: {summary['n_positions']} · "
+          f"equity snapshots: {summary['n_snapshots']} · "
+          f"pruned closed positions: {summary['pruned_positions']}")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    _preflight()
+    from render.build import latest_screener_results
+    from render.markdown import money, pct
+
+    print("quant-tracker status\n" + "-" * 40)
+    results = latest_screener_results()
+    if results:
+        r = results.get("regime", {})
+        print(f"Regime:     {str(r.get('label','?')).upper()} "
+              f"({pct(float(r.get('confidence',0) or 0))}) "
+              f"as of {str(results.get('generated_at',''))[:10]}")
+        top = results.get("summary", {}).get("top_overall", [])
+        if top:
+            picks = ", ".join(f"{s['ticker']}({s['composite_score']:.2f})" for s in top[:5])
+            print(f"Top picks:  {picks}")
+    else:
+        print("Regime:     (no screener run yet — `track screen`)")
+
+    try:
+        from auto_trader.state import portfolio_db as pdb
+        pdb.initialize_db()
+        positions = pdb.get_all_positions()
+        snaps = pdb.get_portfolio_snapshots(days=1)
+        latest = snaps[-1] if snaps else {}
+        print(f"Paper:      {len(positions)} open position(s) · "
+              f"value {money(latest.get('total_value'))} · "
+              f"unrealized {money(latest.get('unrealized_pnl'))}")
+    except Exception as exc:
+        print(f"Paper:      (ledger unavailable: {exc})")
+    return 0
+
+
+# ── Hand-authored vault README (written once, never regenerated) ─────────────
+
+_README = """# 90 Tracker — generated by quant-tracker
+
+Everything in this folder is **auto-generated** by the off-Drive engine at
+`~/dev/quant-tracker` and is regenerated by `track report`. Do not hand-edit
+these notes — your changes will be overwritten.
+
+- `Dashboard.md` — regime, paper P&L, latest picks (Dataview views).
+- `Regime.md` — current market regime + signal weights.
+- `Screener/Run-*.md` — one note per screener run (per-sector top picks, vetoes).
+- `Positions/<TICKER>.md` — one note per open paper position (Dataview source).
+- `Journal/<date>.md` — paper-trading fills per day.
+- `Performance.md` — equity curve, P&L, drawdown.
+
+The Dashboard/Performance views need the **Dataview** community plugin enabled.
+Source of truth is the SQLite cache in `~/dev/quant-tracker/store/` (rebuildable);
+this folder is just the human-readable surface.
+"""
+
+
+def _write_readme_if_absent(tracker_root: Path) -> None:
+    readme = tracker_root / "README.md"
+    if not readme.exists():
+        tracker_root.mkdir(parents=True, exist_ok=True)
+        readme.write_text(_README, encoding="utf-8")
+
+
+# ── Parser ───────────────────────────────────────────────────────────────────
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="track", description="Quant Tracker engine driver")
+    sub = p.add_subparsers(dest="command", required=True)
+
+    d = sub.add_parser("doctor", help="off-Drive preflight")
+    d.add_argument("--json", action="store_true")
+    d.set_defaults(func=cmd_doctor)
+
+    r = sub.add_parser("refresh", help="pull prices + sector performance (watchlist)")
+    r.add_argument("--full", action="store_true", help="full history backfill")
+    r.set_defaults(func=cmd_refresh)
+
+    sd = sub.add_parser("seed", help="seed the 220-stock screener universe into the cache")
+    sd.add_argument("--full", action="store_true", help="2y history (first-run bootstrap)")
+    sd.add_argument("--refresh", action="store_true", help="top up only tickers >24h stale")
+    sd.set_defaults(func=cmd_seed)
+
+    s = sub.add_parser("screen", help="run the regime-aware screener")
+    s.add_argument("--retrain", action="store_true", help="force HMM retrain")
+    s.set_defaults(func=cmd_screen)
+
+    pa = sub.add_parser("paper", help="paper-trading cycles (mock broker)")
+    pa.add_argument("action", choices=["monitor", "cycle", "stop"])
+    pa.add_argument("--clear", action="store_true", help="(stop) clear the halt flag")
+    pa.set_defaults(func=cmd_paper)
+
+    rep = sub.add_parser("report", help="regenerate Obsidian notes")
+    rep.set_defaults(func=cmd_report)
+
+    st = sub.add_parser("status", help="quick terminal summary")
+    st.set_defaults(func=cmd_status)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

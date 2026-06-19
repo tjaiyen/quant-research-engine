@@ -1,0 +1,31 @@
+.env
+__pycache__/
+*.pyc
+*.sqlite
+*.db
+logs/*.log
+.venv/
+.ipynb_checkpoints/
+
+# Off-Drive SQLite cache + run artifacts (rebuildable; never committed)
+store/
+.DS_Store
+
+# Phase J — Regime-aware screener
+screener/output/runs/
+screener/models/*.pkl
+screener/models/*.tmp
+screener/models/*.backup
+pre_screener_snapshot.txt
+screener_run_*.log
+
+# Phase K — Auto-trader
+auto_trader/state/*.db
+auto_trader/state/*.db-shm
+auto_trader/state/*.db-wal
+auto_trader/state/screener_cache.json
+auto_trader/logs/
+auto_trader/output/
+auto_trader/.paper_start_date
+auto_trader/.halt
+pre_trader_snapshot.txt
