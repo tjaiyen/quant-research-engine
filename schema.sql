@@ -193,3 +193,14 @@ CREATE TABLE IF NOT EXISTS screener_runs (
 
 CREATE INDEX IF NOT EXISTS idx_screener_runs_run_at
     ON screener_runs(run_at DESC);
+
+-- =========================================================================
+-- Upgrade U7: next-earnings calendar (additive — new table, no migration).
+-- One row per ticker; the screener's earnings-blackout veto reads next_earnings
+-- at score time. Populated best-effort by tasks/seed_universe (yfinance .calendar).
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS earnings_calendar (
+    ticker         TEXT PRIMARY KEY,
+    next_earnings  TEXT,                               -- ISO date 'YYYY-MM-DD' or NULL
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);

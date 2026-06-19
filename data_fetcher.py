@@ -22,20 +22,59 @@ Public API:
 """
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Literal
 
 # Re-export the underlying provider's functions so callers can import from
-# `data_fetcher` instead of reaching into `data_providers`.
+# `data_fetcher` instead of reaching into `data_providers`. `fetch_daily_adjusted`
+# is imported under an alias and wrapped below with a Stooq fallback (U8); the
+# frozen yfinance provider itself is never modified.
 from data_providers.yfinance_provider import (  # noqa: F401
     ProviderError,
     TickerNotFound,
-    fetch_daily_adjusted,
     fetch_fundamentals,
 )
+from data_providers.yfinance_provider import (
+    fetch_daily_adjusted as _yf_fetch_daily_adjusted,
+)
+
+log = logging.getLogger(__name__)
 
 DataTier = Literal[1, 2, 3]
+
+
+def fetch_daily_adjusted(symbol, output_size="compact", fallback: bool = True):
+    """Fetch daily OHLCV via yfinance, falling back to Stooq on failure (U8).
+
+    Same contract as the frozen yfinance adapter. When yfinance raises
+    (``TickerNotFound``/``ProviderError``) or returns an empty frame and
+    ``fallback`` is True, retry once via ``data_providers.stooq_provider``.
+    If both fail, the last error propagates.
+    """
+    try:
+        df = _yf_fetch_daily_adjusted(symbol, output_size)
+        if df is not None and not df.empty:
+            return df
+        if not fallback:
+            return df
+        yf_error: Exception = TickerNotFound(f"yfinance returned empty for {symbol}")
+    except (TickerNotFound, ProviderError) as exc:
+        if not fallback:
+            raise
+        yf_error = exc
+
+    log.warning("yfinance failed for %s (%s) — trying Stooq fallback", symbol, yf_error)
+    try:
+        from data_providers.stooq_provider import (
+            fetch_daily_adjusted as _stooq_fetch,
+        )
+
+        return _stooq_fetch(symbol, output_size)
+    except Exception as stooq_exc:
+        log.warning("Stooq fallback also failed for %s (%s)", symbol, stooq_exc)
+        raise yf_error
 
 
 # ---------- Feature catalog ----------

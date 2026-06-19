@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from data_providers.yfinance_provider import (
+# U8: fetch via the data_fetcher facade (yfinance → Stooq fallback). It
+# re-exports the exception types + fundamentals from the frozen yfinance adapter.
+from data_fetcher import (
     ProviderError,
     TickerNotFound,
     fetch_daily_adjusted,

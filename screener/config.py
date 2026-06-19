@@ -88,6 +88,18 @@ BEAR_REGIME_VETO_RELAXATION: bool = True
 VETO_RELAXATION_PASSES: int = 2                  # loosen 20% per pass, max N times
 VETO_RELAXATION_FACTOR: float = 0.20             # per-pass loosening fraction
 
+# ── Earnings-Blackout Guard (Upgrade U7) ─────────────────────────────────────
+# Veto (and NEVER relax) any candidate within ±N days of its next earnings date.
+# Categorical, not threshold-based — excluded from the relaxation loop above.
+EARNINGS_BLACKOUT_ENABLED: bool = True
+EARNINGS_BLACKOUT_DAYS: int = 5
+
+# ── Delisting / Stale-Ticker Skip (Upgrade U9) ───────────────────────────────
+# Skip-scoring a ticker whose last fetch errored, or whose cached data is older
+# than this many calendar days (fail-open when status/refresh time is unknown).
+SCREENER_SKIP_STALE_ENABLED: bool = True
+SCREENER_SKIP_STALE_DAYS: int = 10
+
 # ── Sector ETF Map ───────────────────────────────────────────────────────────
 # Keys MUST exactly match the keys used in screener/data/holdings.json (Gate 10).
 # Values mirror cockpit's tasks/refresh_sectors.SECTOR_ETFS.

@@ -181,6 +181,44 @@ def list_holdings() -> pd.DataFrame:
         )
 
 
+# ---------- Earnings calendar (Upgrade U7) ----------
+
+def upsert_earnings(ticker: str, next_earnings: str | None) -> None:
+    """Store the next earnings date (ISO 'YYYY-MM-DD' or None) for a ticker."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO earnings_calendar(ticker, next_earnings, updated_at) "
+            "VALUES(?, ?, datetime('now')) "
+            "ON CONFLICT(ticker) DO UPDATE SET "
+            "next_earnings = excluded.next_earnings, updated_at = datetime('now')",
+            (ticker.upper(), next_earnings),
+        )
+
+
+def fetch_earnings(ticker: str) -> str | None:
+    """Return the cached next earnings date for a ticker, or None."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "SELECT next_earnings FROM earnings_calendar WHERE ticker = ?",
+            (ticker.upper(),),
+        )
+        row = cur.fetchone()
+    return row[0] if row else None
+
+
+# ---------- Ticker status (Upgrade U9) ----------
+
+def ticker_status(ticker: str) -> tuple[str | None, str | None]:
+    """Return (last_status, last_refreshed) for a ticker, or (None, None)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "SELECT last_status, last_refreshed FROM tickers WHERE symbol = ?",
+            (ticker.upper(),),
+        )
+        row = cur.fetchone()
+    return (row[0], row[1]) if row else (None, None)
+
+
 # ---------- User settings (Phase H) ----------
 
 import json as _json

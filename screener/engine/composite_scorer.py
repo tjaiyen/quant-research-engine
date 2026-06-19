@@ -18,11 +18,16 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from datetime import datetime
+
 from screener.config import (
+    EARNINGS_BLACKOUT_DAYS,
+    EARNINGS_BLACKOUT_ENABLED,
     EXPECTED_SIGNAL_KEYS,
     FORECAST_HORIZON_DAYS,
     GARCH_COMPOSITE_MODE,
 )
+from screener.engine.earnings_guard import earnings_blackout
 from screener.engine.veto_gate import apply_veto
 from screener.signals.arima_signal import arima_signal
 from screener.signals.garch_signal import garch_signal
@@ -46,6 +51,7 @@ def score_stock(
     ticker: str,
     regime_data: dict,
     price_history: pd.DataFrame,
+    next_earnings: str | None = None,
 ) -> dict:
     """Full scoring pipeline for one stock.
 
@@ -95,6 +101,21 @@ def score_stock(
     regime = regime_data["regime"]
     veto = apply_veto(garch_vol, mc_loss_prob, regime)
 
+    # STEP 3b (U7): earnings-blackout guard — categorical, never relaxed.
+    earnings_veto = False
+    if EARNINGS_BLACKOUT_ENABLED:
+        passed, reason = earnings_blackout(
+            next_earnings, datetime.now().date(), EARNINGS_BLACKOUT_DAYS
+        )
+        if not passed:
+            earnings_veto = True
+            veto["passed"] = False
+            # Preserve any pre-existing vol/tail reason for the audit trail.
+            veto["veto_reason"] = (
+                reason if veto["veto_reason"] is None
+                else f"{veto['veto_reason']}+{reason}"
+            )
+
     # STEP 4: compute composite ONLY if veto passed
     weights = dict(regime_data["blended_weights"])
 
@@ -127,6 +148,7 @@ def score_stock(
         "composite_score": round(composite_score, 6),
         "passed_veto": bool(veto["passed"]),
         "veto_reason": veto["veto_reason"],
+        "earnings_veto": earnings_veto,
         "regime": regime,
         "regime_confidence": float(regime_data.get("confidence", 0.0)),
         "signal_scores": {k: float(results[k]["score"]) for k in EXPECTED_SIGNAL_KEYS},

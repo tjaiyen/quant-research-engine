@@ -25,6 +25,8 @@ import pandas as pd
 from screener.config import (
     BEAR_REGIME_VETO_RELAXATION,
     HOLDINGS_PATH,
+    SCREENER_SKIP_STALE_DAYS,
+    SCREENER_SKIP_STALE_ENABLED,
     SECTOR_ETFS,
     STOCKS_PER_SECTOR,
     TOP_N_OUTPUT,
@@ -75,6 +77,43 @@ def _from_cockpit(ticker: str) -> pd.DataFrame | None:
         index=df.index,
     ).dropna(how="all")
     return out
+
+
+# --- U9: delisting / stale-ticker skip --------------------------------------
+def _is_tradeable(ticker: str, max_stale_days: int = SCREENER_SKIP_STALE_DAYS) -> bool:
+    """Return False if the ticker's last fetch errored or its data is stale.
+
+    Reads ``tickers.last_status`` / ``last_refreshed`` (written by seed/refresh).
+    Fail-open: unknown status or unparseable timestamp → tradeable (never block
+    a name just because the status table has no opinion).
+    """
+    try:
+        from utils.db import ticker_status
+    except Exception:
+        return True
+    try:
+        status, last_refreshed = ticker_status(ticker)
+    except Exception:
+        return True
+    if status and status.lower().startswith("error"):
+        return False
+    if last_refreshed:
+        try:
+            last = datetime.strptime(str(last_refreshed)[:19], "%Y-%m-%d %H:%M:%S")
+            if (datetime.now() - last).days > max_stale_days:
+                return False
+        except ValueError:
+            pass  # unparseable → fail-open
+    return True
+
+
+def _next_earnings(ticker: str) -> str | None:
+    """Cached next-earnings date for a ticker (U7), or None. Never raises."""
+    try:
+        from utils.db import fetch_earnings
+        return fetch_earnings(ticker)
+    except Exception:
+        return None
 
 
 # --- yfinance batch fetch ---------------------------------------------------
@@ -192,6 +231,10 @@ def rank_industry(sector: str, tickers: list[str], regime_data: dict) -> dict:
     failed: list[dict] = []
 
     for ticker in tickers:
+        # U9: skip delisted/stale tickers (errored last fetch or data too old)
+        if SCREENER_SKIP_STALE_ENABLED and not _is_tradeable(ticker):
+            skipped.append({"ticker": ticker, "reason": "delisted_or_stale"})
+            continue
         ph = histories.get(ticker)
         if ph is None:
             failed.append({"ticker": ticker, "error": "no_data"})
@@ -207,7 +250,10 @@ def rank_industry(sector: str, tickers: list[str], regime_data: dict) -> dict:
             )
             continue
         try:
-            scored.append(score_stock(ticker, regime_data, ph))
+            # U7: pass the cached next-earnings date into the blackout guard
+            scored.append(
+                score_stock(ticker, regime_data, ph, next_earnings=_next_earnings(ticker))
+            )
         except Exception as exc:
             logger.error("%s: unexpected scoring error — %s", ticker, exc)
             failed.append({"ticker": ticker, "error": str(exc)})
@@ -226,6 +272,9 @@ def rank_industry(sector: str, tickers: list[str], regime_data: dict) -> dict:
             }
             relaxed: list[dict] = []
             for s in scored:
+                # U7: earnings blackout is categorical — never relaxed.
+                if s.get("earnings_veto"):
+                    continue
                 gv = s["veto_detail"]["garch_vol"]
                 ml = s["veto_detail"]["mc_loss_prob"]
                 if (

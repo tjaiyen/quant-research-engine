@@ -37,7 +37,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
-from data_providers.yfinance_provider import (
+# U8: fetch via the data_fetcher facade (yfinance → Stooq fallback). It
+# re-exports the exception types + fundamentals from the frozen yfinance adapter.
+from data_fetcher import (
     ProviderError,
     TickerNotFound,
     fetch_daily_adjusted,
@@ -48,6 +50,7 @@ from utils.db import (
     init_db,
     list_tickers,
     mark_ticker_refreshed,
+    upsert_earnings,
     upsert_fundamentals,
     upsert_prices,
     upsert_ticker,
@@ -126,6 +129,58 @@ def _fetch_company_name(symbol: str) -> str | None:
         return None
 
 
+def _fetch_next_earnings(symbol: str) -> str | None:
+    """Best-effort next earnings date (ISO 'YYYY-MM-DD') via yfinance, or None.
+
+    The frozen provider doesn't expose earnings, so we call yfinance directly
+    here (like ``_fetch_company_name``). Returns the nearest upcoming date;
+    falls back to the most recent known date; None on any failure (U7).
+    """
+    try:
+        import datetime as _dt
+
+        import pandas as _pd
+        import yfinance as yf
+
+        today = _dt.date.today()
+        candidates: list[_dt.date] = []
+        tk = yf.Ticker(symbol)
+
+        cal = getattr(tk, "calendar", None)
+        if isinstance(cal, dict):
+            for d in cal.get("Earnings Date", []) or []:
+                try:
+                    candidates.append(_pd.Timestamp(d).date())
+                except Exception:
+                    pass
+        elif cal is not None and hasattr(cal, "loc"):
+            try:  # older yfinance: DataFrame with an 'Earnings Date' row
+                val = cal.loc["Earnings Date"]
+                seq = val.tolist() if hasattr(val, "tolist") else [val]
+                for d in seq:
+                    candidates.append(_pd.Timestamp(d).date())
+            except Exception:
+                pass
+
+        if not candidates:
+            try:
+                edf = tk.get_earnings_dates(limit=8)
+                if edf is not None and not edf.empty:
+                    for idx in edf.index:
+                        candidates.append(_pd.Timestamp(idx).date())
+            except Exception:
+                pass
+
+        future = sorted(d for d in candidates if d >= today)
+        if future:
+            return future[0].isoformat()
+        if candidates:
+            return sorted(candidates)[-1].isoformat()
+        return None
+    except Exception:
+        return None
+
+
 def _seed_one(
     symbol: str,
     *,
@@ -180,6 +235,15 @@ def _seed_one(
         except Exception as exc:
             log.debug("  %s: name fetch failed (%s)", symbol, exc)
 
+        # U7: persist the next earnings date for the blackout veto. Best-effort.
+        try:
+            nxt = _fetch_next_earnings(symbol)
+            upsert_earnings(symbol, nxt)
+            if nxt:
+                log.debug("  %s next earnings: %s", symbol, nxt)
+        except Exception as exc:
+            log.debug("  %s: earnings fetch failed (%s)", symbol, exc)
+
     return True, rows
 
 
@@ -219,8 +283,17 @@ def seed(
 
     for i, sym in enumerate(universe):
         if skip_fresh and _ticker_is_fresh(sym):
-            log.debug("  %s: fresh — skipping", sym)
+            log.debug("  %s: fresh — skipping prices", sym)
             skipped += 1
+            # U7: earnings still refresh even when prices are fresh — the
+            # blackout veto needs a current date regardless of price age.
+            if fetch_fund:
+                try:
+                    upsert_earnings(sym, _fetch_next_earnings(sym))
+                except Exception as exc:
+                    log.debug("  %s: earnings refresh failed (%s)", sym, exc)
+                if i < len(universe) - 1:
+                    time.sleep(inter_delay)
             continue
 
         success, rows = _seed_one(sym, full=full, fetch_fund=fetch_fund)
