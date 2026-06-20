@@ -53,10 +53,11 @@ fills a *stated* Tier-3 gap rather than duplicating the existing ARIMA/GARCH/Kal
 - **Maps to:** HMM regime → `WEIGHT_MATRIX` compositing.
 - **Rec: ADAPT (M).** Beyond regime-weighting, let bull/sideways/bear *disable* unsuited signals (e.g., mean-reversion in a strong-trend regime). Uses existing HMM output; cleaner than weight-only.
 
-### U6 — Explicit `MaximumSectorExposure` cap as a construction model
+### U6 — Explicit `MaximumSectorExposure` cap as a construction model ✅ ALREADY SATISFIED
 - **Source:** LEAN SectorWeighting / MaximumSectorExposure.
 - **Maps to:** the top-5-per-sector ranking across 11 sectors.
 - **Rec: ADOPT (S).** Add a hard cap so no sector dominates the book. Natural fit for the 11-sector universe.
+- **Status:** already enforced — `auto_trader/config.py:MAX_SECTOR_PCT=0.20` → `auto_trader/risk/exposure_guard.py:_guard_5_sector_exposure` drops over-budget buys in the monthly cycle (`run_all_guards`), covered by `test_risk_guards.py`. No work needed.
 
 ---
 
@@ -106,10 +107,11 @@ fills a *stated* Tier-3 gap rather than duplicating the existing ARIMA/GARCH/Kal
 - **Maps to:** a tie-breaker within a sector's top-5, or a soft guard.
 - **Rec: ADAPT (M, default OFF).** Cheap conviction signal but noisy — tie-breaker only, Tier-gated like U13.
 
-### U15 — K-means universe clustering on (vol, return) for diversification
+### U15 — K-means universe clustering on (vol, return) for diversification ✅ IMPLEMENTED
 - **Source:** Amey-Thakur (k-means on annualized vol + return; Silhouette/Elbow for k).
 - **Maps to:** a universe-layer step — cluster the 220 stocks into risk/return cohorts; cap picks per cohort or add an "over-concentrated cohort" veto.
 - **Rec: ADOPT (S).** scikit-learn already present (hmmlearn dep chain); **leakage-light** (clusters on realized stats, not future labels); serves the diversification goal directly. Use Silhouette to pick k (free rigor).
+- **Status:** built — `screener/analysis/clustering.py` (pure `cluster_features` + `compute_clusters` w/ silhouette k-selection), `render/notes.py:clusters_note`, `track clusters` → `90 Tracker/Clusters.md`. On-demand (not in the daily report). A *descriptive* diversification lens, not a selection veto (that's a later option).
 
 ---
 

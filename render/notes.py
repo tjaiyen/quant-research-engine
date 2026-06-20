@@ -363,6 +363,53 @@ def scorecard_note(data: dict, snapshots: list[dict] | None = None) -> str:
     return document(fm, body)
 
 
+# ── Diversification clusters (U15) ───────────────────────────────────────────
+
+def clusters_note(data: dict) -> str:
+    clusters = data.get("clusters", [])
+    k = data.get("k", 0)
+    sil = data.get("silhouette")
+    fm = {
+        "title": "Clusters",
+        "type": "tracker-clusters",
+        "as_of": data.get("as_of"),
+        "k": k,
+        "silhouette": None if sil is None else round(sil, 3),
+        "n_tickers": data.get("n_tickers", 0),
+    }
+    if not clusters:
+        body = (
+            "# Diversification clusters\n\n"
+            "_Not enough cached price history yet — run `track seed` first, then "
+            "`track clusters`._\n"
+        )
+        return document(fm, body)
+
+    summary = table(
+        ["Cluster", "Members", "Avg volatility", "Avg return", "Risk/return profile"],
+        [[f"#{c['id']}", c["n"], pct(c["mean_vol"]), pct(c["mean_return"]), c["label"]]
+         for c in clusters],
+    )
+    blocks = []
+    for c in clusters:
+        members = ", ".join(c["members"])
+        blocks.append(f"### Cluster #{c['id']} — {c['label']} ({c['n']})\n\n{members}")
+
+    sil_str = "n/a" if sil is None else f"{sil:.3f}"
+    body = (
+        "# Diversification clusters\n\n"
+        "_Groups the universe by how **risky vs rewarding** each stock has actually "
+        "been (annualized volatility + return over the lookback window). Spreading "
+        "picks across clusters avoids piling into one risk profile — a different lens "
+        "than the screener's per-sector diversification._\n\n"
+        f"**{k} clusters** over **{data.get('n_tickers', 0)}** stocks "
+        f"(silhouette {sil_str}; {data.get('n_skipped', 0)} skipped for thin history).\n\n"
+        f"## Cluster summary\n\n{summary}\n\n"
+        f"## Members\n\n" + "\n\n".join(blocks) + "\n"
+    )
+    return document(fm, body)
+
+
 # ── Backtest (retrospective skill) ───────────────────────────────────────────
 
 def backtest_note(data: dict) -> str:

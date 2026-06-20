@@ -12,6 +12,7 @@ Replaces the Dash app + Fly cron with local rituals:
     track report                 regenerate the Obsidian notes in `90 Tracker/`
     track score                  grade past picks vs actual returns (Scorecard.md)
     track review                 weekly-review slide deck (Review.md; Slides Extended)
+    track clusters               k-means diversification clusters (Clusters.md)
     track backtest               retrospective skill check (Backtest.md; ~minutes)
     track status                 quick terminal summary
 
@@ -140,6 +141,25 @@ def cmd_score(args: argparse.Namespace) -> int:
     print(f"  {plain}")
     print(f"  graded {data['n_graded_runs']}/{data['n_runs']} runs · "
           f"7d={h['7d']['n']} 28d={h['28d']['n']} 84d={h['84d']['n']} picks")
+    return 0
+
+
+def cmd_clusters(args: argparse.Namespace) -> int:
+    _preflight()
+    from render import notes
+    from render.markdown import atomic_write, tracker_dir
+    from screener.analysis.clustering import compute_clusters
+
+    data = compute_clusters(k=args.k, lookback=args.lookback)
+    atomic_write(tracker_dir() / "Clusters.md", notes.clusters_note(data))
+    print(f"Clusters written → {tracker_dir()}/Clusters.md")
+    if data.get("clusters"):
+        sil = data.get("silhouette")
+        print(f"  {data['k']} clusters over {data['n_tickers']} stocks "
+              f"(silhouette {'n/a' if sil is None else f'{sil:.3f}'}, "
+              f"{data.get('n_skipped', 0)} skipped)")
+    else:
+        print("  not enough cached price history yet — run `track seed` first.")
     return 0
 
 
@@ -303,6 +323,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     rv = sub.add_parser("review", help="weekly-review slide deck (Review.md; Slides Extended)")
     rv.set_defaults(func=cmd_review)
+
+    cl = sub.add_parser("clusters", help="k-means diversification clusters (Clusters.md)")
+    cl.add_argument("--k", type=int, default=None, help="cluster count (default: auto via silhouette)")
+    cl.add_argument("--lookback", type=int, default=252, help="trading days for vol/return (default 252)")
+    cl.set_defaults(func=cmd_clusters)
 
     bt = sub.add_parser("backtest", help="retrospective skill check (Backtest.md; ~minutes)")
     bt.add_argument("--windows", type=int, default=3, help="walk-forward windows (default 3)")
