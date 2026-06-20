@@ -28,10 +28,11 @@ fills a *stated* Tier-3 gap rather than duplicating the existing ARIMA/GARCH/Kal
 
 ## Theme A — Architecture (from LEAN): structural de-tangling
 
-### U1 — Typed `Signal`/Insight object as the screener→trader contract
+### U1 — Typed `Signal`/Insight object as the screener→trader contract ✅ IMPLEMENTED (surgical scope)
 - **Source:** LEAN `Insight` (direction, magnitude, confidence, weight, **period/expiry**).
 - **Maps to:** screener compositing → paper-trader hand-off; `signal_decay_monitor`.
 - **Rec: ADOPT (M).** Formalize the 5-signal composite into a `Signal(symbol, direction, score, confidence, horizon/expiry, regime_at_emit)` dataclass. The **expiry field replaces ad-hoc decay monitoring** and gives a clean seam between `screener/` and `auto_trader/`. Highest clarity-per-effort borrow.
+- **Status:** built at the **ingestion boundary only** (the low-risk slice TJ chose over the full 15-file refactor): `screener/signal.py:Signal` (`from_row` validates + type-coerces, `canonical()` merges back) is wired into `auto_trader/compat/screener_compat.normalize_screener_cache`, so a malformed/old-schema cache (e.g. a string `composite_score`) is coerced+logged at the seam instead of silently flowing into the trader's math. Downstream stays dict-based. **Not done:** full pipeline typing (signal_filter→sizer→target_builder→delta_engine) — deliberately skipped as low-marginal-value churn on a working, fully-tested system; no expiry field added (would be unused — `signal_decay_monitor` already handles decay by re-scoring).
 
 ### U2 — Split sizing from risk: a `PortfolioTarget` hand-off + separate risk layer
 - **Source:** LEAN PortfolioTarget + the Risk-Management stage (risk *post-processes* targets).

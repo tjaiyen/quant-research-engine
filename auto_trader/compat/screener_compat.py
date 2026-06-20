@@ -45,7 +45,12 @@ def normalize_screener_cache(cache: dict) -> dict:
         "_cached_at": cache.get("_cached_at", cache.get("generated_at", "")),
     }
 
-    # Normalize per-stock entries
+    # Normalize per-stock entries through the typed Signal boundary (U1): this
+    # validates + type-coerces the required fields (a string composite_score
+    # becomes a float-or-logged-default instead of silently flowing into the
+    # trader's math) while preserving any extra keys on the row.
+    from screener.signal import Signal
+
     for sector, stocks in normalized["sectors"].items():
         if not isinstance(stocks, list):
             continue
@@ -58,12 +63,8 @@ def normalize_screener_cache(cache: dict) -> dict:
                     "Stock %s in %s missing keys %s — filling with defaults",
                     stock.get("ticker", "?"), sector, missing,
                 )
-                stock.setdefault("composite_score", 0.0)
-                stock.setdefault("passed_veto", False)
-                stock.setdefault("signal_scores", {})
-                stock.setdefault("ticker", "UNKNOWN")
-            # Backfill `sector` from the parent dict key when missing
-            stock.setdefault("sector", sector)
+            # Typed parse → merge the coerced required fields back onto the row.
+            stock.update(Signal.from_row(stock, sector=sector).canonical())
 
     if normalized["regime"]["label"] == "unknown":
         logger.warning(
