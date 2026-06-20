@@ -116,7 +116,7 @@ def screener_run_note(results: dict) -> str:
 
 # ── Paper position ───────────────────────────────────────────────────────────
 
-def position_note(pos: dict) -> str:
+def position_note(pos: dict, trades: list[dict] | None = None) -> str:
     """One open paper position. Frontmatter is the Dataview source of truth."""
     shares = float(pos.get("shares", 0) or 0)
     total_cost = float(pos.get("total_cost", 0) or 0)
@@ -157,6 +157,19 @@ def position_note(pos: dict) -> str:
         f"last score {num(pos.get('last_score'), 3)}\n"
         f"- Stop-loss: **{money(pos.get('stop_loss_price'))}**\n"
     )
+    # U21: per-fill trade log as Dataview inline fields (transaction-level history
+    # in one note). Renders nothing until the paper cycle produces fills.
+    if trades:
+        lines = []
+        for t in sorted(trades, key=lambda x: str(x.get("executed_at", ""))):
+            d = str(t.get("executed_at", ""))[:10]
+            lines.append(
+                f"- [date:: {d}] [action:: {t.get('action', '?')}] "
+                f"[shares:: {num(t.get('shares'), 4)}] "
+                f"[price:: {num(t.get('price'), 2)}] "
+                f"[value:: {num(t.get('total_value'), 2)}]"
+            )
+        body += "\n## Trade Log\n\n" + "\n".join(lines) + "\n"
     return document(fm, body)
 
 

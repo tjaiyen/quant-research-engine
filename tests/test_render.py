@@ -94,6 +94,24 @@ def test_position_note_pnl_math():
     assert "unrealized_pct: 0.1" in md
 
 
+def test_position_note_trade_log_inline_fields():
+    pos = {"ticker": "MSFT", "sector": "Technology", "shares": 10.0,
+           "cost_basis": 100.0, "total_cost": 1000.0, "current_price": 110.0,
+           "status": "ACTIVE"}
+    trades = [
+        {"executed_at": "2026-07-01T13:30:00", "action": "BUY", "shares": 5.0,
+         "price": 98.0, "total_value": 490.0},
+        {"executed_at": "2026-07-02T13:30:00", "action": "BUY", "shares": 5.0,
+         "price": 102.0, "total_value": 510.0},
+    ]
+    md = notes.position_note(pos, trades)
+    assert "## Trade Log" in md
+    assert "[date:: 2026-07-01]" in md and "[action:: BUY]" in md
+    assert "[price:: 98.00]" in md
+    # No trades → no Trade Log section.
+    assert "## Trade Log" not in notes.position_note(pos)
+
+
 def test_position_note_handles_missing_price():
     pos = {"ticker": "XYZ", "sector": "Energy", "shares": 5.0,
            "cost_basis": 20.0, "total_cost": 100.0, "current_price": None,

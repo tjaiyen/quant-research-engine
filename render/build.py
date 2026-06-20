@@ -97,10 +97,16 @@ def build_all() -> dict:
 
     # 2) Open paper positions (one note each) + prune closed ones.
     pos_dir = root / "Positions"
+    trades_by_ticker: dict[str, list[dict]] = {}
+    for t in paper["trades"]:
+        trades_by_ticker.setdefault(str(t.get("ticker", "")), []).append(t)
     keep: set[str] = set()
     for pos in paper["positions"]:
         fname = f"{pos['ticker']}.md"
-        atomic_write(pos_dir / fname, notes.position_note(pos))
+        atomic_write(
+            pos_dir / fname,
+            notes.position_note(pos, trades_by_ticker.get(pos["ticker"])),
+        )
         keep.add(fname)
         written.append(f"Positions/{fname}")
     pruned = _prune_stale(pos_dir, keep)
