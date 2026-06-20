@@ -184,6 +184,7 @@ def run_walk_forward(
     n_windows: int = 4,
     step_days: int = 30,
     horizon_days: int = FORECAST_HORIZON_DAYS,
+    max_per_sector: int | None = None,
 ) -> list[WindowResult]:
     """Run the walk-forward back-test.
 
@@ -191,9 +192,13 @@ def run_walk_forward(
         n_windows: number of historical evaluation windows.
         step_days: calendar-day step between windows (going backwards).
         horizon_days: forward window for realized-return evaluation.
+        max_per_sector: cap each sector's pool for speed (keeps per-sector
+            top-N ranking valid, just from a smaller candidate set).
     """
     features_full = get_market_features(lookback_years=HMM_LOOKBACK_YEARS, min_rows=300)
     sectors = _load_universe()
+    if max_per_sector:
+        sectors = {s: t[:max_per_sector] for s, t in sectors.items()}
     holdings_flat = {t for tickers in sectors.values() for t in tickers}
     histories: dict[str, pd.DataFrame] = {}
     for t in holdings_flat:

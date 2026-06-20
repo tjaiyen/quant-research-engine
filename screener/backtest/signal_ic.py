@@ -77,14 +77,19 @@ def compute_signal_ic(
     n_samples: int = 6,
     step_days: int = 30,
     horizon_days: int = FORECAST_HORIZON_DAYS,
+    max_tickers: int | None = None,
 ) -> dict:
     """Compute per-signal IC across rolling sample dates.
 
     Returns a dict with keys ``per_sample`` (list per evaluation date),
-    ``aggregate`` (mean IC by signal), and ``by_regime``.
+    ``aggregate`` (mean IC by signal), and ``by_regime``. ``max_tickers`` caps
+    the universe for speed — IC is a cross-sectional rank correlation, so a
+    representative sample is statistically sufficient.
     """
     features = get_market_features(lookback_years=HMM_LOOKBACK_YEARS, min_rows=300)
     universe = _load_universe()
+    if max_tickers:
+        universe = universe[:max_tickers]
     histories = {t: _ph_for(t) for t in universe}
     histories = {
         t: ph for t, ph in histories.items()

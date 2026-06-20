@@ -219,6 +219,49 @@ def ticker_status(ticker: str) -> tuple[str | None, str | None]:
     return (row[0], row[1]) if row else (None, None)
 
 
+# ---------- Screener history reads (Scorecard) ----------
+
+def list_screener_runs(limit: int = 100) -> list[dict]:
+    """Return recent screener runs (newest first) as dicts."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "SELECT run_at, regime_label, regime_confidence, total_screened, "
+            "total_passed_veto, veto_rate_pct FROM screener_runs "
+            "ORDER BY run_at DESC LIMIT ?",
+            (limit,),
+        )
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def fetch_screener_picks(run_at: str) -> list[dict]:
+    """Return all per-ticker rows for one screener run."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "SELECT run_at, ticker, sector, rank, composite_score, regime, "
+            "passed_veto, top_overall_rank FROM screener_results WHERE run_at = ? "
+            "ORDER BY composite_score DESC",
+            (run_at,),
+        )
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def price_on_or_before(ticker: str, date_iso: str) -> float | None:
+    """Return adj_close on, or the most recent trading day before, ``date_iso``."""
+    day = (date_iso or "").strip()[:10]
+    if len(day) != 10:
+        return None  # malformed date → no lookup rather than a wrong truncation
+    with get_conn() as conn:
+        cur = conn.execute(
+            "SELECT adj_close FROM prices WHERE ticker = ? AND date <= ? "
+            "AND adj_close IS NOT NULL ORDER BY date DESC LIMIT 1",
+            (ticker.upper(), day),
+        )
+        row = cur.fetchone()
+    return float(row[0]) if row and row[0] is not None else None
+
+
 # ---------- User settings (Phase H) ----------
 
 import json as _json

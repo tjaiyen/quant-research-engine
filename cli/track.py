@@ -10,6 +10,8 @@ Replaces the Dash app + Fly cron with local rituals:
     track paper cycle            monthly buy cycle (no-op outside the buy window)
     track paper stop [--clear]   set / clear the trading halt flag
     track report                 regenerate the Obsidian notes in `90 Tracker/`
+    track score                  grade past picks vs actual returns (Scorecard.md)
+    track backtest               retrospective skill check (Backtest.md; ~minutes)
     track status                 quick terminal summary
 
 Every command that touches the DB or the vault runs `doctor` first and aborts
@@ -26,7 +28,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-os.chdir(REPO_ROOT)  # engine modules use paths relative to the repo root
+# NOTE: the chdir to REPO_ROOT happens in main(), not at import, so importing
+# this module (e.g. in tests) has no side effect on the process working dir.
 
 
 # ── Preflight gate ───────────────────────────────────────────────────────────
@@ -109,6 +112,64 @@ def cmd_report(args: argparse.Namespace) -> int:
           f"positions: {summary['n_positions']} · "
           f"equity snapshots: {summary['n_snapshots']} · "
           f"pruned closed positions: {summary['pruned_positions']}")
+    return 0
+
+
+def cmd_score(args: argparse.Namespace) -> int:
+    _preflight()
+    from render.build import build_all
+    from render.markdown import tracker_dir
+    from screener.backtest.scorecard import compute_scorecard
+    from render import notes
+    from render.markdown import atomic_write
+
+    data = compute_scorecard()
+    atomic_write(tracker_dir() / "Scorecard.md", notes.scorecard_note(data))
+    h = data["horizons"]
+    # Echo the same plain verdict the note leads with (strip markdown emphasis).
+    verdict, _ = notes._scorecard_verdict(h)
+    plain = verdict.replace("**", "").replace("[[", "").replace("]]", "")
+    print(f"Scorecard written → {tracker_dir()}/Scorecard.md")
+    print(f"  {plain}")
+    print(f"  graded {data['n_graded_runs']}/{data['n_runs']} runs · "
+          f"7d={h['7d']['n']} 28d={h['28d']['n']} 84d={h['84d']['n']} picks")
+    return 0
+
+
+def cmd_backtest(args: argparse.Namespace) -> int:
+    _preflight()
+    from datetime import datetime, timezone
+
+    from render import notes
+    from render.markdown import atomic_write, tracker_dir
+
+    print("Retrospective backtest — re-runs the strategy over history.")
+    print(f"  sampled for speed: {args.windows} windows · {args.samples} IC dates · "
+          f"~{args.max_per_sector}/sector · ~{args.max_tickers} tickers (~15 min).")
+    try:
+        from screener.backtest.walk_forward import _summarize, run_walk_forward
+        from screener.backtest.signal_ic import compute_signal_ic
+        from screener.backtest.regime_accuracy import evaluate_regime_predictive_power
+
+        print("  [1/3] walk-forward — do the top picks beat the average stock?")
+        wf = _summarize(run_walk_forward(n_windows=args.windows,
+                                         max_per_sector=args.max_per_sector))
+        print("  [2/3] information coefficient — do the signals predict returns?")
+        ic = compute_signal_ic(n_samples=args.samples, max_tickers=args.max_tickers)
+        print("  [3/3] regime accuracy — is the bull/bear call real?")
+        rg = evaluate_regime_predictive_power()
+    except Exception as exc:
+        print(f"\n✗ Backtest could not run: {exc}", file=sys.stderr)
+        print("  Usually this means there isn't enough cached price history yet — "
+              "run `./track seed --full` first, then retry.", file=sys.stderr)
+        return 1
+
+    data = {"as_of": datetime.now(timezone.utc).isoformat(),
+            "walk_forward": wf, "ic": ic, "regime": rg}
+    atomic_write(tracker_dir() / "Backtest.md", notes.backtest_note(data))
+    print(f"\nBacktest written → {tracker_dir()}/Backtest.md")
+    print(f"  walk-forward: {wf.get('n_windows')} windows, mean lift "
+          f"{wf.get('mean_lift', 0):.4f}, win rate {wf.get('win_rate', 0):.0%}")
     return 0
 
 
@@ -204,12 +265,25 @@ def build_parser() -> argparse.ArgumentParser:
     rep = sub.add_parser("report", help="regenerate Obsidian notes")
     rep.set_defaults(func=cmd_report)
 
+    scp = sub.add_parser("score", help="grade past picks vs actual returns (Scorecard.md)")
+    scp.set_defaults(func=cmd_score)
+
+    bt = sub.add_parser("backtest", help="retrospective skill check (Backtest.md; ~minutes)")
+    bt.add_argument("--windows", type=int, default=3, help="walk-forward windows (default 3)")
+    bt.add_argument("--samples", type=int, default=4, help="IC sample dates (default 4)")
+    bt.add_argument("--max-per-sector", type=int, default=8, dest="max_per_sector",
+                    help="walk-forward: candidates per sector (default 8)")
+    bt.add_argument("--max-tickers", type=int, default=60, dest="max_tickers",
+                    help="IC: universe sample size (default 60)")
+    bt.set_defaults(func=cmd_backtest)
+
     st = sub.add_parser("status", help="quick terminal summary")
     st.set_defaults(func=cmd_status)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
+    os.chdir(REPO_ROOT)  # engine modules use paths relative to the repo root
     args = build_parser().parse_args(argv)
     return args.func(args)
 

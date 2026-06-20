@@ -40,6 +40,8 @@ cp .env.example .env   # defaults are paper/mock; DBs point at store/
 ./track paper monitor  # daily: stops, decay rescore, equity snapshot
 ./track paper cycle    # monthly buy cycle (no-op outside the 1st–5th window)
 ./track report         # regenerate the Obsidian notes in `90 Tracker/`
+./track score          # grade past picks vs actual returns (Scorecard.md)
+./track backtest       # retrospective skill check (Backtest.md; ~15 min, sampled)
 ./track status         # quick terminal summary
 ```
 

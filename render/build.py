@@ -126,6 +126,15 @@ def build_all() -> dict:
     )
     written.append("Dashboard.md")
 
+    # 6) Scorecard — past picks vs actual forward returns (best-effort, DB-only).
+    try:
+        from screener.backtest.scorecard import compute_scorecard
+
+        atomic_write(root / "Scorecard.md", notes.scorecard_note(compute_scorecard()))
+        written.append("Scorecard.md")
+    except Exception as exc:
+        logger.debug("scorecard skipped: %s", exc)
+
     return {
         "vault": str(root),
         "written": written,

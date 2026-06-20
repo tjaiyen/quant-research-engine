@@ -279,3 +279,150 @@ def dashboard_note(regime: dict, latest_snapshot: dict, top_picks: list[dict],
         f"## Recent screener runs\n\n{runs_view}\n"
     )
     return document(fm, body)
+
+
+# ── Scorecard (is it working?) ───────────────────────────────────────────────
+
+_MIN_PICKS_FOR_VERDICT = 5
+
+
+def _scorecard_verdict(horizons: dict) -> tuple[str, str]:
+    """Return (one-line verdict, headline_key). Prefers the longest elapsed horizon
+    with enough graded picks; falls back to 'too early'."""
+    for key in ("84d", "28d", "7d"):  # longest (most reliable) first
+        s = horizons.get(key, {})
+        if s.get("n", 0) >= _MIN_PICKS_FOR_VERDICT:
+            days = key[:-1]
+            beat = s["hit_rate"]
+            alpha = s["avg_alpha"]
+            if alpha > 0:
+                v = (f"✅ **The picks are beating the market.** Over {days} days, "
+                     f"**{pct(beat,0)}** of {s['n']} picks beat SPY, with an average "
+                     f"edge of **{pct(alpha)}** (picks {pct(s['avg_return'])} vs market).")
+            else:
+                v = (f"⚠️ **The picks are lagging the market so far.** Over {days} days, "
+                     f"only **{pct(beat,0)}** of {s['n']} picks beat SPY; average edge "
+                     f"**{pct(alpha)}**. Early and noisy — keep watching.")
+            return v, key
+    return (
+        "⏳ **Too early to tell.** The picks need a few weeks of price history before "
+        "they can be graded against the market. Check back after ~1–4 weekly runs. "
+        "(For an immediate read of whether the engine has skill, see **[[Backtest]]**.)",
+        "",
+    )
+
+
+def scorecard_note(data: dict) -> str:
+    horizons = data.get("horizons", {})
+    verdict, _ = _scorecard_verdict(horizons)
+
+    def _row(label, s):
+        cov = s.get("coverage")
+        cov_str = "—" if cov is None else f"{pct(cov,0)} ({s.get('n',0)}/{s.get('attempted',0)})"
+        return [label, s.get("n", 0), pct(s.get("up_rate")), pct(s.get("hit_rate")),
+                pct(s.get("avg_return")), pct(s.get("avg_alpha")), cov_str]
+
+    order = [("7 days", "7d"), ("28 days", "28d"), ("84 days", "84d"),
+             ("to date", "to_date")]
+    metrics = table(
+        ["Horizon", "Picks", "% went up", "% beat SPY", "Avg return",
+         "Avg edge vs SPY", "Coverage"],
+        [_row(lbl, horizons.get(k, {})) for lbl, k in order],
+    )
+
+    paper = data.get("paper", {})
+    if paper.get("status") == "ok":
+        paper_line = (f"Paper portfolio **{pct(paper['port_return'])}** vs SPY "
+                      f"**{pct(paper['spy_return'])}** → edge **{pct(paper['excess'])}** "
+                      f"over {paper.get('n_days')} days.")
+    elif paper.get("status") == "cash_only":
+        paper_line = "_Holding cash only so far — comparison starts after the first monthly buy._"
+    else:
+        paper_line = "_No paper history yet — starts after the first monthly buy._"
+
+    best = next((horizons.get(k, {}) for k in ("28d", "7d", "84d")
+                 if horizons.get(k, {}).get("n", 0) >= _MIN_PICKS_FOR_VERDICT), {})
+    fm = {
+        "title": "Scorecard",
+        "type": "tracker-scorecard",
+        "as_of": data.get("as_of"),
+        "runs_graded": data.get("n_graded_runs", 0),
+        "headline_hit_rate": round(best["hit_rate"], 4) if best.get("hit_rate") is not None else None,
+        "headline_avg_alpha": round(best["avg_alpha"], 4) if best.get("avg_alpha") is not None else None,
+    }
+    body = (
+        "# Are the predictions working?\n\n"
+        f"{verdict}\n\n"
+        "_\"Beat SPY\" means the pick rose more than the overall market over that window. "
+        "\"Edge\" (alpha) is the pick's return minus the market's._\n\n"
+        f"## All passed picks, by horizon\n\n{metrics}\n\n"
+        f"_Graded {data.get('n_graded_runs', 0)} of {data.get('n_runs', 0)} recorded runs._\n\n"
+        f"## Paper portfolio vs the market\n\n{paper_line}\n"
+    )
+    return document(fm, body)
+
+
+# ── Backtest (retrospective skill) ───────────────────────────────────────────
+
+def backtest_note(data: dict) -> str:
+    wf = data.get("walk_forward") or {}
+    ic = data.get("ic") or {}
+    rg = data.get("regime") or {}
+
+    # 1) Walk-forward: do top picks beat the average stock?
+    wf_n = wf.get("n_windows", 0)
+    if wf_n:
+        lift, win = wf.get("mean_lift", 0.0), wf.get("win_rate", 0.0)
+        wf_verdict = (
+            f"{'✅' if lift > 0 else '⚠️'} Across **{wf_n}** historical test windows, the "
+            f"top picks beat the average stock in **{pct(win,0)}** of them, by an average of "
+            f"**{pct(lift)}** per window."
+        )
+    else:
+        wf_verdict = "_Walk-forward did not produce results (need more price history)._"
+
+    # 2) Information Coefficient: do the signals predict returns?
+    agg = ic.get("aggregate", {})
+    ic_rows = [[k, num(v, 3), "predictive" if (v or 0) > 0.02 else
+               ("weak/none" if (v or 0) >= -0.02 else "backwards")]
+              for k, v in agg.items()]
+    ic_tbl = table(["Signal", "IC (skill)", "Read"], ic_rows) if ic_rows else "_n/a_"
+    good = [k for k, v in agg.items() if (v or 0) > 0.02]
+    ic_verdict = (
+        f"Signals that actually predict returns (positive skill): "
+        f"**{', '.join(good) if good else 'none clearly'}**. "
+        f"IC is a correlation between a signal's ranking and the next-{ic.get('horizon_days','?')}-day "
+        f"return — above ~0.02 is a usable edge."
+    )
+
+    # 3) Regime: is the bull/bear call real?
+    mono = rg.get("monotone_bull_gt_bear")
+    rg_rows = [[r.get("regime"), pct(r.get("mean_forward_logret")), r.get("n_observations")]
+               for r in rg.get("regimes", [])]
+    rg_tbl = table(["Regime", "Avg forward return", "Days observed"], rg_rows) if rg_rows else "_n/a_"
+    rg_verdict = (
+        "✅ The regime call is real — bull periods averaged higher forward returns than bear periods."
+        if mono else
+        "⚠️ The regime ordering wasn't clean in this sample (bull not clearly > bear)."
+    )
+
+    fm = {
+        "title": "Backtest",
+        "type": "tracker-backtest",
+        "as_of": data.get("as_of"),
+        "wf_mean_lift": round(wf.get("mean_lift"), 4) if wf.get("mean_lift") is not None else None,
+        "wf_win_rate": round(wf.get("win_rate"), 4) if wf.get("win_rate") is not None else None,
+    }
+    body = (
+        "# Does the engine have skill? (retrospective)\n\n"
+        "_This re-runs the strategy over the past year of prices for an immediate read. "
+        "It's evidence of skill, not a promise of profit, and it's measured on history the "
+        "models partly saw — treat the live **[[Scorecard]]** as the real test._\n\n"
+        f"## 1. Do the top picks beat the average stock?\n\n{wf_verdict}\n\n"
+        + (f"Win rate by regime: " + ", ".join(
+            f"{k} {pct(v.get('win_rate'),0)}" for k, v in (wf.get('by_regime') or {}).items())
+           + "\n\n" if wf.get("by_regime") else "")
+        + f"## 2. Do the signals predict returns?\n\n{ic_verdict}\n\n{ic_tbl}\n\n"
+        f"## 3. Is the market-regime call real?\n\n{rg_verdict}\n\n{rg_tbl}\n"
+    )
+    return document(fm, body)

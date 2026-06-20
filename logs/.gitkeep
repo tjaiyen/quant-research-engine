@@ -1,0 +1,2 @@
+# Keeps logs/ present on a fresh clone so launchd StandardOutPath has a parent.
+# Actual logs (*.log) are gitignored.

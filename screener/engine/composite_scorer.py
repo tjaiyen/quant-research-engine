@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from screener.config import (
     EARNINGS_BLACKOUT_DAYS,
@@ -105,7 +105,7 @@ def score_stock(
     earnings_veto = False
     if EARNINGS_BLACKOUT_ENABLED:
         passed, reason = earnings_blackout(
-            next_earnings, datetime.now().date(), EARNINGS_BLACKOUT_DAYS
+            next_earnings, datetime.now(timezone.utc).date(), EARNINGS_BLACKOUT_DAYS
         )
         if not passed:
             earnings_veto = True
