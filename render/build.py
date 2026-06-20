@@ -130,10 +130,18 @@ def build_all() -> dict:
     try:
         from screener.backtest.scorecard import compute_scorecard
 
-        atomic_write(root / "Scorecard.md", notes.scorecard_note(compute_scorecard()))
+        scorecard = compute_scorecard()
+        atomic_write(root / "Scorecard.md", notes.scorecard_note(scorecard))
         written.append("Scorecard.md")
+
+        # 7) Review deck — same data, as a presentable slide deck (U20).
+        from render import slides
+
+        atomic_write(root / "Review.md", slides.review_deck(
+            regime, top_picks, scorecard, snapshots, as_of=now_iso))
+        written.append("Review.md")
     except Exception as exc:
-        logger.debug("scorecard skipped: %s", exc)
+        logger.debug("scorecard/review skipped: %s", exc)
 
     return {
         "vault": str(root),

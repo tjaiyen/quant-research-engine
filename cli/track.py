@@ -11,6 +11,7 @@ Replaces the Dash app + Fly cron with local rituals:
     track paper stop [--clear]   set / clear the trading halt flag
     track report                 regenerate the Obsidian notes in `90 Tracker/`
     track score                  grade past picks vs actual returns (Scorecard.md)
+    track review                 weekly-review slide deck (Review.md; Slides Extended)
     track backtest               retrospective skill check (Backtest.md; ~minutes)
     track status                 quick terminal summary
 
@@ -133,6 +134,32 @@ def cmd_score(args: argparse.Namespace) -> int:
     print(f"  {plain}")
     print(f"  graded {data['n_graded_runs']}/{data['n_runs']} runs · "
           f"7d={h['7d']['n']} 28d={h['28d']['n']} 84d={h['84d']['n']} picks")
+    return 0
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    _preflight()
+    from datetime import datetime, timezone
+
+    from render import build, slides
+    from render.markdown import atomic_write, tracker_dir
+    from screener.backtest.scorecard import compute_scorecard
+
+    results = build.latest_screener_results() or {}
+    regime = results.get("regime", {})
+    top = results.get("summary", {}).get("top_overall", [])
+    snaps = []
+    try:
+        from auto_trader.state.portfolio_db import get_portfolio_snapshots
+        snaps = get_portfolio_snapshots(days=3650)
+    except Exception:
+        pass
+    deck = slides.review_deck(regime, top, compute_scorecard(), snaps,
+                              as_of=datetime.now(timezone.utc).isoformat())
+    atomic_write(tracker_dir() / "Review.md", deck)
+    print(f"Review deck written → {tracker_dir()}/Review.md")
+    print("  open in Obsidian with the 'Slides Extended' plugin to present; "
+          "export to HTML to share.")
     return 0
 
 
@@ -267,6 +294,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     scp = sub.add_parser("score", help="grade past picks vs actual returns (Scorecard.md)")
     scp.set_defaults(func=cmd_score)
+
+    rv = sub.add_parser("review", help="weekly-review slide deck (Review.md; Slides Extended)")
+    rv.set_defaults(func=cmd_review)
 
     bt = sub.add_parser("backtest", help="retrospective skill check (Backtest.md; ~minutes)")
     bt.add_argument("--windows", type=int, default=3, help="walk-forward windows (default 3)")

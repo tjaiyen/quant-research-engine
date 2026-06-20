@@ -137,6 +137,16 @@ fills a *stated* Tier-3 gap rather than duplicating the existing ARIMA/GARCH/Kal
 
 ---
 
+## Theme F — Presentation (mined 2026-06-19 from obsidian-advanced-slides)
+
+### U20 — Auto-generated investment-review slide deck ✅ IMPLEMENTED
+- **Source:** [MSzturc/obsidian-advanced-slides](https://github.com/MSzturc/obsidian-advanced-slides) — Markdown → reveal.js decks (`---` slide breaks, frontmatter theme/transition, ```chart blocks, tables/fragments; exports standalone HTML/PDF).
+- **Maps to:** the `render/` layer — emit one more note, `90 Tracker/Review.md`, a weekly-review deck from the same data dicts (regime, top picks, scorecard incl. coverage, equity-curve chart).
+- **Rec: ADOPT (S–M).** Low-effort pure note-builder; high value as a **finance+AI job-hunt portfolio artifact** (exportable HTML deck: pipeline → model → picks → measured performance). **Implemented:** `render/slides.py:review_deck`, `track review`, and `build_all` writes `Review.md`.
+- **Caveats baked in:** the original plugin is **discontinued → target the maintained fork "Slides Extended"**; advanced-slides conflicts with **Dataview**, so the deck is **fully static** (no queries — naturally how `render/` works); it degrades to readable Markdown without the plugin.
+
+---
+
 ## Theme E — Explicit DECLINES (with why)
 
 - **LSTM / TensorFlow price prediction** (tensorflow) — DECLINE (L). Overfits small free-data, seed-unstable, dominated by a naïve "tomorrow≈today" baseline, lookahead-prone. ARIMA/GARCH/Kalman already cover the linear-Gaussian job.
