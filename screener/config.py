@@ -100,6 +100,15 @@ EARNINGS_BLACKOUT_DAYS: int = 5
 SCREENER_SKIP_STALE_ENABLED: bool = True
 SCREENER_SKIP_STALE_DAYS: int = 10
 
+# ── News-Sentiment Overlay (Upgrade U11) ─────────────────────────────────────
+# Opt-in soft veto on strongly-negative recent news (FinBERT over yfinance news).
+# Default OFF — when off, the screener behaves exactly as before. Fail-open:
+# unknown/unavailable sentiment never vetoes.
+SENTIMENT_VETO_ENABLED: bool = False
+SENTIMENT_VETO_THRESHOLD: float = -0.60     # veto if sentiment_score <= this (-1..1)
+SENTIMENT_NEWS_LOOKBACK_DAYS: int = 14      # only score headlines from the last N days
+SENTIMENT_MAX_ARTICLES: int = 10            # cap headlines scored per ticker
+
 # ── Sector ETF Map ───────────────────────────────────────────────────────────
 # Keys MUST exactly match the keys used in screener/data/holdings.json (Gate 10).
 # Values mirror cockpit's tasks/refresh_sectors.SECTOR_ETFS.

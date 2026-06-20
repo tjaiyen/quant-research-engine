@@ -26,6 +26,8 @@ from screener.config import (
     EXPECTED_SIGNAL_KEYS,
     FORECAST_HORIZON_DAYS,
     GARCH_COMPOSITE_MODE,
+    SENTIMENT_VETO_ENABLED,
+    SENTIMENT_VETO_THRESHOLD,
 )
 from screener.engine.earnings_guard import earnings_blackout
 from screener.engine.veto_gate import apply_veto
@@ -52,6 +54,7 @@ def score_stock(
     regime_data: dict,
     price_history: pd.DataFrame,
     next_earnings: str | None = None,
+    cached_sentiment: dict | None = None,
 ) -> dict:
     """Full scoring pipeline for one stock.
 
@@ -116,6 +119,21 @@ def score_stock(
                 else f"{veto['veto_reason']}+{reason}"
             )
 
+    # STEP 3c (U11): opt-in news-sentiment veto — categorical, default OFF.
+    sentiment_veto_hit = False
+    if SENTIMENT_VETO_ENABLED and cached_sentiment is not None:
+        from screener.sentiment.scorer import sentiment_veto
+        passed_s, reason_s = sentiment_veto(
+            cached_sentiment.get("sentiment_score"), SENTIMENT_VETO_THRESHOLD
+        )
+        if not passed_s:
+            sentiment_veto_hit = True
+            veto["passed"] = False
+            veto["veto_reason"] = (
+                reason_s if veto["veto_reason"] is None
+                else f"{veto['veto_reason']}+{reason_s}"
+            )
+
     # STEP 4: compute composite ONLY if veto passed
     weights = dict(regime_data["blended_weights"])
 
@@ -149,6 +167,7 @@ def score_stock(
         "passed_veto": bool(veto["passed"]),
         "veto_reason": veto["veto_reason"],
         "earnings_veto": earnings_veto,
+        "sentiment_veto": sentiment_veto_hit,
         "regime": regime,
         "regime_confidence": float(regime_data.get("confidence", 0.0)),
         "signal_scores": {k: float(results[k]["score"]) for k in EXPECTED_SIGNAL_KEYS},

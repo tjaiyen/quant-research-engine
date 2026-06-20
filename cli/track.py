@@ -13,6 +13,8 @@ Replaces the Dash app + Fly cron with local rituals:
     track score                  grade past picks vs actual returns (Scorecard.md)
     track review                 weekly-review slide deck (Review.md; Slides Extended)
     track clusters               k-means diversification clusters (Clusters.md)
+    track sentiment              FinBERT news-sentiment overlay (Sentiment.md)
+    track sim                    strategy portfolio backtest (StrategyBacktest.md; ~10-15 min)
     track backtest               retrospective skill check (Backtest.md; ~minutes)
     track status                 quick terminal summary
 
@@ -226,6 +228,64 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sentiment(args: argparse.Namespace) -> int:
+    _preflight()
+    from datetime import datetime, timezone
+
+    from render import notes
+    from render.markdown import atomic_write, tracker_dir
+    from screener.config import SENTIMENT_VETO_ENABLED, SENTIMENT_VETO_THRESHOLD
+    from tasks import refresh_sentiment
+    from utils.db import list_sentiment
+
+    extra: list[str] = list(args.tickers or [])
+    if args.limit:
+        extra += ["--limit", str(args.limit)]
+    refresh_sentiment.main(extra)
+
+    data = {
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "rows": list_sentiment(),
+        "veto_enabled": SENTIMENT_VETO_ENABLED,
+        "threshold": SENTIMENT_VETO_THRESHOLD,
+    }
+    atomic_write(tracker_dir() / "Sentiment.md", notes.sentiment_note(data))
+    print(f"Sentiment note written → {tracker_dir()}/Sentiment.md")
+    return 0
+
+
+def cmd_sim(args: argparse.Namespace) -> int:
+    _preflight()
+    from datetime import datetime, timezone
+
+    from render import notes
+    from render.markdown import atomic_write, tracker_dir
+
+    print(f"Strategy backtest — simulating {args.years}y of {args.rebalance}ly "
+          f"rebalancing over history (~10–15 min, sampled)…")
+    try:
+        from screener.backtest.portfolio_backtest import run_portfolio_backtest
+        data = run_portfolio_backtest(years=args.years, rebalance=args.rebalance,
+                                      max_per_sector=args.max_per_sector)
+    except Exception as exc:
+        print(f"\n✗ Strategy backtest could not run: {exc}", file=sys.stderr)
+        print("  Usually means not enough cached history — run `./track seed --full` first.",
+              file=sys.stderr)
+        return 1
+
+    _ = datetime.now(timezone.utc)
+    atomic_write(tracker_dir() / "StrategyBacktest.md", notes.strategy_backtest_note(data))
+    m = data.get("metrics", {})
+    print(f"\nStrategy backtest written → {tracker_dir()}/StrategyBacktest.md")
+    if data.get("equity_curve"):
+        print(f"  total {m.get('total_return', 0):+.1%} vs SPY {m.get('spy_total_return', 0):+.1%} "
+              f"· CAGR {m.get('cagr', 0):+.1%} · maxDD {m.get('max_drawdown', 0):.1%} "
+              f"· {data.get('n_rebalances')} rebalances")
+    else:
+        print("  not enough cached history — run `./track seed --full` first.")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     _preflight()
     from render.build import latest_screener_results
@@ -328,6 +388,18 @@ def build_parser() -> argparse.ArgumentParser:
     cl.add_argument("--k", type=int, default=None, help="cluster count (default: auto via silhouette)")
     cl.add_argument("--lookback", type=int, default=252, help="trading days for vol/return (default 252)")
     cl.set_defaults(func=cmd_clusters)
+
+    se = sub.add_parser("sentiment", help="FinBERT news-sentiment overlay (Sentiment.md)")
+    se.add_argument("tickers", nargs="*", help="specific tickers (default: universe)")
+    se.add_argument("--limit", type=int, default=None, help="only the first N tickers")
+    se.set_defaults(func=cmd_sentiment)
+
+    sm = sub.add_parser("sim", help="strategy portfolio backtest (StrategyBacktest.md; ~10-15 min)")
+    sm.add_argument("--years", type=int, default=3, help="lookback years (default 3)")
+    sm.add_argument("--rebalance", choices=["month", "quarter"], default="quarter")
+    sm.add_argument("--max-per-sector", type=int, default=8, dest="max_per_sector",
+                    help="candidates scored per sector (default 8)")
+    sm.set_defaults(func=cmd_sim)
 
     bt = sub.add_parser("backtest", help="retrospective skill check (Backtest.md; ~minutes)")
     bt.add_argument("--windows", type=int, default=3, help="walk-forward windows (default 3)")

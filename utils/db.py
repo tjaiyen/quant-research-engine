@@ -206,6 +206,48 @@ def fetch_earnings(ticker: str) -> str | None:
     return row[0] if row else None
 
 
+# ---------- News sentiment (Upgrade U11) ----------
+
+def upsert_sentiment(ticker: str, sentiment_score: float | None, label: str | None,
+                     n_headlines: int = 0, confidence: float | None = None) -> None:
+    """Store a ticker's news-sentiment result (idempotent)."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO news_sentiment"
+            "(ticker, sentiment_score, label, n_headlines, confidence, updated_at) "
+            "VALUES(?, ?, ?, ?, ?, datetime('now')) "
+            "ON CONFLICT(ticker) DO UPDATE SET "
+            "sentiment_score = excluded.sentiment_score, label = excluded.label, "
+            "n_headlines = excluded.n_headlines, confidence = excluded.confidence, "
+            "updated_at = datetime('now')",
+            (ticker.upper(), sentiment_score, label, int(n_headlines), confidence),
+        )
+
+
+def fetch_sentiment(ticker: str) -> dict | None:
+    """Return a ticker's cached sentiment row as a dict, or None."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "SELECT sentiment_score, label, n_headlines, confidence, updated_at "
+            "FROM news_sentiment WHERE ticker = ?", (ticker.upper(),),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    return {"sentiment_score": row[0], "label": row[1], "n_headlines": row[2],
+            "confidence": row[3], "updated_at": row[4]}
+
+
+def list_sentiment() -> list[dict]:
+    """All cached sentiment rows (newest update first)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "SELECT ticker, sentiment_score, label, n_headlines, confidence, updated_at "
+            "FROM news_sentiment ORDER BY sentiment_score ASC")
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
 # ---------- Ticker status (Upgrade U9) ----------
 
 def ticker_status(ticker: str) -> tuple[str | None, str | None]:

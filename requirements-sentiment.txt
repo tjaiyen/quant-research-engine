@@ -1,0 +1,6 @@
+# Optional — enables the U11 FinBERT news-sentiment overlay (`track sentiment`).
+#   ./.venv/bin/python -m pip install -r requirements-sentiment.txt
+# Heavy (~2 GB with torch). WITHOUT it, sentiment is reported as UNAVAILABLE and
+# the (default-OFF) sentiment veto is a no-op — the screener runs identically.
+transformers>=4.40,<5
+torch>=2.2

@@ -51,7 +51,7 @@ def test_relaxation_skips_earnings_veto(monkeypatch):
     monkeypatch.setattr(ir, "_is_tradeable", lambda t, *a, **k: True)
     monkeypatch.setattr(ir, "_next_earnings", lambda t: None)
 
-    def fake_score(ticker, regime_data, ph, next_earnings=None):
+    def fake_score(ticker, regime_data, ph, next_earnings=None, cached_sentiment=None):
         # Both fail the initial veto; both would PASS relaxation on vol/tail,
         # but EARN carries an earnings veto and must stay out.
         return {

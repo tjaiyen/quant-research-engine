@@ -116,6 +116,15 @@ def _next_earnings(ticker: str) -> str | None:
         return None
 
 
+def _cached_sentiment(ticker: str) -> dict | None:
+    """Cached news-sentiment row for a ticker (U11), or None. Never raises."""
+    try:
+        from utils.db import fetch_sentiment
+        return fetch_sentiment(ticker)
+    except Exception:
+        return None
+
+
 # --- yfinance batch fetch ---------------------------------------------------
 def _extract_ticker_data(
     raw_data: pd.DataFrame, ticker: str, tickers_list: list[str]
@@ -250,9 +259,14 @@ def rank_industry(sector: str, tickers: list[str], regime_data: dict) -> dict:
             )
             continue
         try:
-            # U7: pass the cached next-earnings date into the blackout guard
+            # U7/U11: pass cached earnings + (only when enabled) sentiment.
+            from screener.config import SENTIMENT_VETO_ENABLED
             scored.append(
-                score_stock(ticker, regime_data, ph, next_earnings=_next_earnings(ticker))
+                score_stock(
+                    ticker, regime_data, ph,
+                    next_earnings=_next_earnings(ticker),
+                    cached_sentiment=_cached_sentiment(ticker) if SENTIMENT_VETO_ENABLED else None,
+                )
             )
         except Exception as exc:
             logger.error("%s: unexpected scoring error — %s", ticker, exc)
@@ -272,8 +286,8 @@ def rank_industry(sector: str, tickers: list[str], regime_data: dict) -> dict:
             }
             relaxed: list[dict] = []
             for s in scored:
-                # U7: earnings blackout is categorical — never relaxed.
-                if s.get("earnings_veto"):
+                # U7/U11: categorical vetoes (earnings, sentiment) — never relaxed.
+                if s.get("earnings_veto") or s.get("sentiment_veto"):
                     continue
                 gv = s["veto_detail"]["garch_vol"]
                 ml = s["veto_detail"]["mc_loss_prob"]

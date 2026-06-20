@@ -423,6 +423,47 @@ def clusters_note(data: dict) -> str:
     return document(fm, body)
 
 
+# ── News sentiment (U11) ─────────────────────────────────────────────────────
+
+def sentiment_note(data: dict) -> str:
+    rows = data.get("rows", []) or []
+    counts = {"POSITIVE": 0, "NEUTRAL": 0, "NEGATIVE": 0, "UNAVAILABLE": 0}
+    for r in rows:
+        counts[r.get("label", "UNAVAILABLE")] = counts.get(r.get("label", "UNAVAILABLE"), 0) + 1
+    fm = {
+        "title": "Sentiment",
+        "type": "tracker-sentiment",
+        "as_of": data.get("as_of"),
+        "n_tickers": len(rows),
+        "veto_enabled": bool(data.get("veto_enabled")),
+    }
+    if not rows:
+        return document(fm, "# News sentiment\n\n"
+                        "_No sentiment cached yet — run `track sentiment`._\n")
+
+    scored = [r for r in rows if r.get("label") != "UNAVAILABLE"]
+    most_neg = sorted(scored, key=lambda r: (r.get("sentiment_score") if r.get("sentiment_score")
+                                             is not None else 0))[:15]
+    tbl = table(
+        ["Ticker", "Score", "Label", "Headlines", "Confidence"],
+        [[r.get("ticker"), num(r.get("sentiment_score"), 3), r.get("label"),
+          r.get("n_headlines"), num(r.get("confidence"), 2)] for r in most_neg],
+    )
+    veto_line = (f"**Sentiment veto:** {'ON' if data.get('veto_enabled') else 'OFF (opt-in)'} "
+                 f"· threshold ≤ {data.get('threshold')}")
+    body = (
+        "# News sentiment\n\n"
+        "_FinBERT over recent yfinance headlines. An informational overlay; the "
+        "sentiment veto is opt-in and default OFF. News is noisy — treat as a "
+        "'pause & review' flag, not a hard rule._\n\n"
+        f"{veto_line}\n\n"
+        f"- Positive: **{counts['POSITIVE']}** · Neutral: **{counts['NEUTRAL']}** · "
+        f"Negative: **{counts['NEGATIVE']}** · Unavailable: **{counts['UNAVAILABLE']}**\n\n"
+        f"## Most negative ({len(most_neg)})\n\n{tbl}\n"
+    )
+    return document(fm, body)
+
+
 # ── Backtest (retrospective skill) ───────────────────────────────────────────
 
 def backtest_note(data: dict) -> str:
@@ -485,5 +526,58 @@ def backtest_note(data: dict) -> str:
            + "\n\n" if wf.get("by_regime") else "")
         + f"## 2. Do the signals predict returns?\n\n{ic_verdict}\n\n{ic_tbl}\n\n"
         f"## 3. Is the market-regime call real?\n\n{rg_verdict}\n\n{rg_tbl}\n"
+    )
+    return document(fm, body)
+
+
+# ── Strategy portfolio backtest (U4) ─────────────────────────────────────────
+
+def strategy_backtest_note(data: dict) -> str:
+    m = data.get("metrics", {}) or {}
+    curve = data.get("equity_curve", []) or []
+    fm = {
+        "title": "Strategy Backtest",
+        "type": "tracker-strategy-backtest",
+        "as_of": data.get("as_of"),
+        "years": data.get("years"),
+        "rebalance": data.get("rebalance"),
+        "total_return": None if m.get("total_return") is None else round(m["total_return"], 4),
+        "cagr": None if m.get("cagr") is None else round(m["cagr"], 4),
+        "sharpe": None if m.get("sharpe") is None else round(m["sharpe"], 3),
+        "max_drawdown": None if m.get("max_drawdown") is None else round(m["max_drawdown"], 4),
+    }
+    if not curve:
+        return document(fm, "# Strategy backtest\n\n"
+                        "_Not enough cached history to simulate — run `track seed` first._\n")
+
+    excess = m.get("excess")
+    verdict = (
+        f"{'✅' if (excess or 0) > 0 else '⚠️'} Over **{data.get('years')} years** "
+        f"(rebalanced {data.get('rebalance')}ly), the strategy returned "
+        f"**{pct(m.get('total_return'))}** vs SPY **{pct(m.get('spy_total_return'))}** "
+        f"→ edge **{pct(excess)}**."
+    )
+    metrics_tbl = table(
+        ["Metric", "Strategy", "SPY"],
+        [
+            ["Total return", pct(m.get("total_return")), pct(m.get("spy_total_return"))],
+            ["CAGR", pct(m.get("cagr")), "—"],
+            ["Max drawdown", pct(m.get("max_drawdown")), "—"],
+            ["Sharpe (per-rebalance)", num(m.get("sharpe"), 2), "—"],
+            ["Win rate (segments)", pct(m.get("win_rate"), 0), "—"],
+        ],
+    )
+    snaps = [{"snapshot_date": c["date"], "total_value": c["strategy"],
+              "benchmark_value": c["spy"]} for c in curve]
+    body = (
+        "# Strategy backtest (portfolio simulation)\n\n"
+        f"{verdict}\n\n"
+        "_A portfolio simulation: per-sector top picks, equal-weight, rebalanced; "
+        "**not** a bit-exact replay of the paper trader. Sampled over history the "
+        "models partly saw — evidence, not a profit promise._\n\n"
+        f"## Metrics\n\n{metrics_tbl}\n\n"
+        f"_{data.get('n_rebalances', 0)} rebalances · ~{data.get('avg_picks', 0):.0f} "
+        "picks held each period._\n\n"
+        f"## Equity curve (rebased to 100)\n\n{equity_chart(snaps)}\n"
     )
     return document(fm, body)

@@ -204,3 +204,17 @@ CREATE TABLE IF NOT EXISTS earnings_calendar (
     next_earnings  TEXT,                               -- ISO date 'YYYY-MM-DD' or NULL
     updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- =========================================================================
+-- Upgrade U11: news-sentiment cache (additive — new table, no migration).
+-- One row per ticker; populated by tasks/refresh_sentiment (yfinance news +
+-- FinBERT). The opt-in sentiment veto reads sentiment_score at score time.
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS news_sentiment (
+    ticker           TEXT PRIMARY KEY,
+    sentiment_score  REAL,                             -- -1.0..+1.0, or NULL
+    label            TEXT,                             -- POSITIVE|NEUTRAL|NEGATIVE|UNAVAILABLE
+    n_headlines      INTEGER NOT NULL DEFAULT 0,
+    confidence       REAL,                             -- mean model confidence 0..1
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);

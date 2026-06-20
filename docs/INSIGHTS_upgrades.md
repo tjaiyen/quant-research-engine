@@ -44,10 +44,11 @@ fills a *stated* Tier-3 gap rather than duplicating the existing ARIMA/GARCH/Kal
 - **Maps to:** the 8-guard veto pipeline (`auto_trader/risk/*`).
 - **Rec: ADAPT (S).** Make each guard a small object with one method, run them as a list. Turns a monolithic veto into 8 independently testable, reorderable units. Pairs with U2.
 
-### U4 — Deterministic event-replay backtester reusing the trader's decision functions
+### U4 — Deterministic event-replay backtester reusing the trader's decision functions ✅ IMPLEMENTED (portfolio-sim scope)
 - **Source:** LEAN's "same code path across backtest/paper/live," deterministic replay.
 - **Maps to:** `auto_trader/` + the SQLite ledger; the biggest genuine gap (today = forward paper only).
 - **Rec: ADAPT (L).** Feed the *same* compositor + sizer + guards bar-by-bar from the SQLite price cache; swap only the clock + fill source. Lets you validate a strategy change before it touches the live paper ledger. High effort, highest discipline payoff.
+- **Status:** built as a **strategy portfolio simulation** (not a bit-exact broker/guard replay): `screener/backtest/portfolio_backtest.py:run_portfolio_backtest` reuses the walk-forward machinery (`_regime_at`/`_slice_history_to`/`_ph_for` + `score_stock`) — quarterly rebalance, per-sector top-N equal-weight, mark-to-market vs SPY (equity curve + total/CAGR/maxDD/Sharpe). `render/notes.strategy_backtest_note`, `track sim`. Sampled (~10–15 min), on-demand. Pure metric helpers unit-tested; sim loop tested via injected scorer.
 
 ### U5 — Regime *selects which signals are active*, not just reweights them
 - **Source:** LEAN Universe Selection + alpha-model swapping.
@@ -88,10 +89,11 @@ fills a *stated* Tier-3 gap rather than duplicating the existing ARIMA/GARCH/Kal
 
 ## Theme C — New signals (opt-in, Tier-gated — fill the Tier-3 gaps)
 
-### U11 — FinBERT news-sentiment as a 6th screener signal
+### U11 — FinBERT news-sentiment ✅ IMPLEMENTED (opt-in veto, not a 6th signal)
 - **Source:** transformers / `ProsusAI/finbert` (BERT-base, CPU-OK, trained on financial-news register).
 - **Maps to:** a NEW 6th per-stock signal feeding the regime-weighted composite + ARS.
 - **Rec: ADAPT (M).** The one ML dependency worth its weight — fills the explicit no-sentiment gap. **Only valid with a point-in-time, timestamped news feed** (else instant lookahead). Cache scores in SQLite keyed by (ticker, date) like everything else.
+- **Status:** built as an **opt-in soft veto + overlay**, NOT a 6th composite signal (the validated `WEIGHT_MATRIX` stays untouched). `screener/sentiment/scorer.py` (yfinance `.news` → FinBERT, point-in-time for forward use, graceful UNAVAILABLE if deps/model absent), additive `news_sentiment` table, `track sentiment`, `Sentiment.md`, and a `SENTIMENT_VETO_ENABLED` (default **OFF**) categorical veto wired into `composite_scorer`/`industry_ranker` (mirrors the U7 earnings guard). Heavy deps are **optional** (`requirements-sentiment.txt`); without them sentiment is UNAVAILABLE and the veto is a no-op.
 
 ### U12 — Ship sentiment as a *veto/guard* first, weighted signal later
 - **Source:** FinBERT + the 8-guard pattern.
