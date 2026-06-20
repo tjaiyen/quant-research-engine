@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Monthly quant-tracker run (1st of the month 07:00 PT): paper cycle → paper
+  monitor → report. The cycle no-ops outside the 1st-5th buy window. Install:
+    cp deploy/com.tj.quant-tracker.monthly.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tj.quant-tracker.monthly.plist
+  Test once:  launchctl kickstart -k gui/$(id -u)/com.tj.quant-tracker.monthly
+  Remove:     launchctl bootout gui/$(id -u)/com.tj.quant-tracker.monthly
+              rm ~/Library/LaunchAgents/com.tj.quant-tracker.monthly.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tj.quant-tracker.monthly</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/user/dev/quant-tracker/bin/scheduled-run.sh</string>
+        <string>monthly</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Day</key><integer>1</integer>
+        <key>Hour</key><integer>7</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/user/dev/quant-tracker/logs/launchd.monthly.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/user/dev/quant-tracker/logs/launchd.monthly.err.log</string>
+</dict>
+</plist>
