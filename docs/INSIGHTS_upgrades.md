@@ -147,6 +147,37 @@ fills a *stated* Tier-3 gap rather than duplicating the existing ARIMA/GARCH/Kal
 
 ---
 
+## Theme G — Obsidian ecosystem (mined 2026-06-19 from 4 plugins)
+
+**Honest verdict: a mostly-decline round.** Three of the four are human-facing UX
+plugins an auto-generation pipeline can't drive; Dataview (already used well) mostly
+*validates keeping the current static design*. One small ADOPT, deferred.
+
+### U21 — Dataview inline fields + FLATTEN for trade-level history — ADOPT (S), DEFERRED
+- **Source:** [blacksmithgu/obsidian-dataview](https://github.com/blacksmithgu/obsidian-dataview) — inline fields (`key:: value`, incl. in list items) + `FLATTEN file.lists`.
+- **Maps to:** `render/notes.py:position_note` — emit a `## Trade Log` with per-fill inline fields (`[entry_date:: …] [entry_price:: …] [shares:: …]`) from `auto_trader` `trade_history`, so a Dataview query shows transaction-level history inside one position note (no note-per-fill).
+- **Rec: ADOPT (S) — but DEFER.** Genuinely additive and renderer-emittable. Low value *now* (the monthly `paper cycle` hasn't produced fills yet); revisit once positions exist.
+
+### U22 — Dataview GROUP BY live sector aggregation — ADAPT (M), keep static
+- **Source:** Dataview `GROUP BY sector` + `sum(rows.market_value)` field-swizzling.
+- **Maps to:** could replace a Python-computed sector roll-up with a live view.
+- **Rec: ADAPT (M) — not recommended.** quant-tracker's **static, Python-computed, deterministic** output is *better* for an auditable finance tool than live, vault-index-dependent aggregation. Recorded as possible; **keep static**.
+
+### U23 — DataviewJS (computed columns / dv.view() / in-JS charting) — DECLINE
+- **Source:** Dataview `dataviewjs` + the `dv` API.
+- **Rec: DECLINE.** Adds vault-side JS, bundle weight, and split logic. The existing Python-computed tables + the ```chart equity block (U20 / `render/markdown.py:equity_chart`) already cover this with less complexity and more auditability.
+
+### U24 — Advanced Tables / Iconic / Vault Statistics — DECLINE (all)
+- **[advanced-tables](https://github.com/tgrosinger/advanced-tables-obsidian):** an interactive human table *editor* — irrelevant to read-only auto-generated tables.
+- **[iconic](https://github.com/gfxholo/iconic):** icons are assigned via **manual UI rules**, **not** drivable from note frontmatter — the renderer can't automate them (cosmetic, one-time manual user setup at most).
+- **[vault-statistics](https://github.com/bkyle/obsidian-vault-statistics-plugin):** generic vault word/file counts in the status bar — zero relevance to trading data.
+
+> **Dataview health (for the ledger):** MIT, actively maintained (v0.5.68, Apr 2025).
+> The advanced-slides × Dataview 5× slowdown is **already mitigated** — quant-tracker
+> keeps `Review.md` (U20) fully static.
+
+---
+
 ## Theme E — Explicit DECLINES (with why)
 
 - **LSTM / TensorFlow price prediction** (tensorflow) — DECLINE (L). Overfits small free-data, seed-unstable, dominated by a naïve "tomorrow≈today" baseline, lookahead-prone. ARIMA/GARCH/Kalman already cover the linear-Gaussian job.
