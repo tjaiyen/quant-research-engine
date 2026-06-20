@@ -6,7 +6,7 @@ surface fully unit-testable without a vault or a database.
 """
 from __future__ import annotations
 
-from render.markdown import document, money, num, pct, table
+from render.markdown import document, equity_chart, money, num, pct, table
 
 # Dataview folder anchors (paths are relative to the vault root).
 _POS_FROM = '"90 Tracker/Positions"'
@@ -312,7 +312,7 @@ def _scorecard_verdict(horizons: dict) -> tuple[str, str]:
     )
 
 
-def scorecard_note(data: dict) -> str:
+def scorecard_note(data: dict, snapshots: list[dict] | None = None) -> str:
     horizons = data.get("horizons", {})
     verdict, _ = _scorecard_verdict(horizons)
 
@@ -357,7 +357,8 @@ def scorecard_note(data: dict) -> str:
         "\"Edge\" (alpha) is the pick's return minus the market's._\n\n"
         f"## All passed picks, by horizon\n\n{metrics}\n\n"
         f"_Graded {data.get('n_graded_runs', 0)} of {data.get('n_runs', 0)} recorded runs._\n\n"
-        f"## Paper portfolio vs the market\n\n{paper_line}\n"
+        f"## Paper portfolio vs the market\n\n{paper_line}\n\n"
+        f"{equity_chart(snapshots or [])}\n"
     )
     return document(fm, body)
 

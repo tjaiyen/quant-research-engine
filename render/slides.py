@@ -11,36 +11,11 @@ own line (blank lines around) separates horizontal slides. Targets the maintaine
 """
 from __future__ import annotations
 
-import json
-
-from render.markdown import money, num, pct, table
+from render.markdown import equity_chart, num, pct, table
 from render.notes import _scorecard_verdict
 
 # Horizontal slide break (blank lines around the rule, per the slide syntax).
 _SEP = "\n\n---\n\n"
-
-
-def _equity_chart(snapshots: list[dict]) -> str:
-    """A reveal.js ```chart line block of paper-vs-SPY, both rebased to 100."""
-    snaps = [s for s in snapshots
-             if s.get("total_value") and s.get("benchmark_value")]
-    if len(snaps) < 2:
-        return ("_The equity curve appears once the monthly buy creates positions "
-                "and a few daily snapshots accumulate._")
-    labels = [str(s.get("snapshot_date")) for s in snaps]
-    v0 = float(snaps[0]["total_value"])
-    b0 = float(snaps[0]["benchmark_value"])
-    port = [round(float(s["total_value"]) / v0 * 100, 2) for s in snaps] if v0 else []
-    spy = [round(float(s["benchmark_value"]) / b0 * 100, 2) for s in snaps] if b0 else []
-    return (
-        "```chart\n"
-        "type: line\n"
-        f"labels: {json.dumps(labels)}\n"
-        "series:\n"
-        f"  - title: Paper portfolio\n    data: {json.dumps(port)}\n"
-        f"  - title: SPY\n    data: {json.dumps(spy)}\n"
-        "```"
-    )
 
 
 def review_deck(regime: dict, top_picks: list[dict], scorecard: dict,
@@ -86,7 +61,7 @@ def review_deck(regime: dict, top_picks: list[dict], scorecard: dict,
     slides.append(f"# Are the Picks Working?\n\n{verdict}\n\n{sc_tbl}")
 
     # 5) Paper performance (equity curve chart).
-    slides.append(f"# Paper Performance vs Market\n\n{_equity_chart(snapshots or [])}")
+    slides.append(f"# Paper Performance vs Market\n\n{equity_chart(snapshots or [])}")
 
     # 6) Backtest (optional — only if a backtest dict is supplied).
     if backtest:

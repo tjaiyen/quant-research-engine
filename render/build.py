@@ -131,7 +131,7 @@ def build_all() -> dict:
         from screener.backtest.scorecard import compute_scorecard
 
         scorecard = compute_scorecard()
-        atomic_write(root / "Scorecard.md", notes.scorecard_note(scorecard))
+        atomic_write(root / "Scorecard.md", notes.scorecard_note(scorecard, snapshots))
         written.append("Scorecard.md")
 
         # 7) Review deck — same data, as a presentable slide deck (U20).

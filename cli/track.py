@@ -125,7 +125,13 @@ def cmd_score(args: argparse.Namespace) -> int:
     from render.markdown import atomic_write
 
     data = compute_scorecard()
-    atomic_write(tracker_dir() / "Scorecard.md", notes.scorecard_note(data))
+    snaps = []
+    try:
+        from auto_trader.state.portfolio_db import get_portfolio_snapshots
+        snaps = get_portfolio_snapshots(days=3650)
+    except Exception:
+        pass
+    atomic_write(tracker_dir() / "Scorecard.md", notes.scorecard_note(data, snaps))
     h = data["horizons"]
     # Echo the same plain verdict the note leads with (strip markdown emphasis).
     verdict, _ = notes._scorecard_verdict(h)

@@ -7,6 +7,7 @@ write-temp-then-os.replace — so Obsidian never sees a half-written note
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -101,6 +102,35 @@ def money(x: float | None, digits: int = 2) -> str:
 
 def num(x: float | None, digits: int = 4) -> str:
     return "—" if x is None else f"{x:.{digits}f}"
+
+
+def equity_chart(snapshots: list[dict]) -> str:
+    """A reveal.js / Obsidian-Charts ```chart line block of paper-vs-SPY, rebased to 100.
+
+    Returns a plain-Markdown placeholder when there aren't ≥2 usable snapshots
+    (so it degrades gracefully on a fresh install). The ```chart block renders
+    inside Slides-Extended decks and with the Obsidian Charts plugin in notes;
+    without either it shows as a harmless code block.
+    """
+    snaps = [s for s in snapshots
+             if s.get("total_value") and s.get("benchmark_value")]
+    if len(snaps) < 2:
+        return ("_The equity curve appears once the monthly buy creates positions "
+                "and a few daily snapshots accumulate._")
+    labels = [str(s.get("snapshot_date")) for s in snaps]
+    v0 = float(snaps[0]["total_value"])
+    b0 = float(snaps[0]["benchmark_value"])
+    port = [round(float(s["total_value"]) / v0 * 100, 2) for s in snaps] if v0 else []
+    spy = [round(float(s["benchmark_value"]) / b0 * 100, 2) for s in snaps] if b0 else []
+    return (
+        "```chart\n"
+        "type: line\n"
+        f"labels: {json.dumps(labels)}\n"
+        "series:\n"
+        f"  - title: Paper portfolio\n    data: {json.dumps(port)}\n"
+        f"  - title: SPY\n    data: {json.dumps(spy)}\n"
+        "```"
+    )
 
 
 # ── Atomic write ─────────────────────────────────────────────────────────────
