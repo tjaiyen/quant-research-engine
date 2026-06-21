@@ -266,6 +266,7 @@ def cmd_sentiment(args: argparse.Namespace) -> int:
 
 def cmd_copilot(args: argparse.Namespace) -> int:
     _preflight()
+    import utils.config  # noqa: F401 — triggers load_dotenv so .env's ANTHROPIC_API_KEY is set
     from datetime import datetime, timezone
 
     from render import notes
