@@ -109,6 +109,17 @@ SENTIMENT_VETO_THRESHOLD: float = -0.60     # veto if sentiment_score <= this (-
 SENTIMENT_NEWS_LOOKBACK_DAYS: int = 14      # only score headlines from the last N days
 SENTIMENT_MAX_ARTICLES: int = 10            # cap headlines scored per ticker
 
+# ── AI Co-pilot (Claude reasoning overlay) ───────────────────────────────────
+# Opt-in. When enabled AND an ANTHROPIC_API_KEY is present, Claude reads each
+# cycle and writes a first-person "here's my thinking" take (conviction +
+# concerns). ADVISORY ONLY — it never places trades; the deterministic quant
+# engine + 8 risk guards remain the sole trade path. Default OFF; degrades
+# gracefully (no SDK / no key / API error → an informational "off" note).
+COPILOT_ENABLED: bool = False
+COPILOT_MODEL: str = "claude-opus-4-8"
+COPILOT_MAX_TOKENS: int = 2048
+COPILOT_EFFORT: str = "low"          # narration task — keep it cheap
+
 # ── Sector ETF Map ───────────────────────────────────────────────────────────
 # Keys MUST exactly match the keys used in screener/data/holdings.json (Gate 10).
 # Values mirror cockpit's tasks/refresh_sectors.SECTOR_ETFS.

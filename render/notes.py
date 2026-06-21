@@ -492,6 +492,45 @@ def agent_log_note(decisions: list[dict]) -> str:
     return document(fm, body)
 
 
+# ── AI co-pilot (Claude reasoning overlay) ───────────────────────────────────
+
+def copilot_note(review: dict, context: dict | None = None) -> str:
+    context = context or {}
+    available = bool(review.get("available"))
+    fm = {
+        "title": "Copilot",
+        "type": "tracker-copilot",
+        "as_of": context.get("as_of"),
+        "available": available,
+        "model": review.get("model"),
+    }
+    if not available:
+        reason = review.get("reason", "the co-pilot is off")
+        body = (
+            "# 🤖 AI co-pilot — off\n\n"
+            f"_The co-pilot isn't running: **{reason}**._\n\n"
+            "It's an **optional** layer. To turn it on:\n\n"
+            "1. `./.venv/bin/python -m pip install -r requirements-copilot.txt`\n"
+            "2. set an `ANTHROPIC_API_KEY` in your environment\n"
+            "3. set `COPILOT_ENABLED = True` in `screener/config.py` (or just run `track copilot`)\n\n"
+            "When on, Claude reads each cycle and writes its take here. It is "
+            "**advisory only** — it never places trades; the quant engine + 8 "
+            "risk guards make every actual (paper) trade.\n"
+        )
+        return document(fm, body)
+    regime = context.get("regime") or {}
+    body = (
+        "# 🤖 My take\n\n"
+        "_Claude, reading the latest cycle as your portfolio-manager co-pilot. "
+        "**Advisory only** — I don't place trades; the quant engine + 8 risk "
+        "guards do. Paper money, research, not financial advice._\n\n"
+        + (f"**Regime:** {regime.get('label', '?')} · "
+           f"**model:** {review.get('model', '?')}\n\n" if regime else "")
+        + review.get("commentary", "").strip() + "\n"
+    )
+    return document(fm, body)
+
+
 # ── News sentiment (U11) ─────────────────────────────────────────────────────
 
 def sentiment_note(data: dict) -> str:

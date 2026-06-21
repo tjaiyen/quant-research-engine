@@ -14,6 +14,7 @@ Replaces the Dash app + Fly cron with local rituals:
     track review                 weekly-review slide deck (Review.md; Slides Extended)
     track clusters               k-means diversification clusters (Clusters.md)
     track sentiment              FinBERT news-sentiment overlay (Sentiment.md)
+    track copilot                AI co-pilot's take on the latest cycle (Copilot.md; opt-in)
     track sim                    strategy portfolio backtest (StrategyBacktest.md; ~10-15 min)
     track backtest               retrospective skill check (Backtest.md; ~minutes)
     track status                 quick terminal summary
@@ -263,6 +264,53 @@ def cmd_sentiment(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_copilot(args: argparse.Namespace) -> int:
+    _preflight()
+    from datetime import datetime, timezone
+
+    from render import notes
+    from render.build import _decisions, _paper_reads, latest_screener_results
+    from render.markdown import atomic_write, tracker_dir
+    from screener.copilot.advisor import copilot_review
+
+    results = latest_screener_results() or {}
+    paper = _paper_reads()
+    snaps = paper.get("snapshots") or []
+    latest = snaps[-1] if snaps else {}
+    portfolio = {
+        "total_value": latest.get("total_value"),
+        "cash": latest.get("cash"),
+        "n_positions": latest.get("n_positions", len(paper.get("positions", []))),
+        "drawdown_from_peak": latest.get("drawdown_from_peak"),
+    } if latest else {}
+
+    verdict = None
+    try:
+        from screener.backtest.scorecard import compute_scorecard
+        sc = compute_scorecard()
+        verdict = sc.get("verdict") if isinstance(sc, dict) else None
+    except Exception:
+        pass
+
+    decisions = _decisions(paper.get("trades", []))
+    context = {
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "regime": results.get("regime", {}),
+        "top_picks": results.get("summary", {}).get("top_overall", []),
+        "portfolio": portfolio,
+        "scorecard_verdict": verdict,
+        "recent_decisions": [notes._decision_text(d) for d in decisions[:8]],
+    }
+    review = copilot_review(context)
+    atomic_write(tracker_dir() / "Copilot.md", notes.copilot_note(review, context))
+    if review.get("available"):
+        print(f"Co-pilot take written → {tracker_dir()}/Copilot.md")
+    else:
+        print(f"Co-pilot off ({review.get('reason')}); wrote enablement note "
+              f"→ {tracker_dir()}/Copilot.md")
+    return 0
+
+
 def cmd_sim(args: argparse.Namespace) -> int:
     _preflight()
     from datetime import datetime, timezone
@@ -402,6 +450,9 @@ def build_parser() -> argparse.ArgumentParser:
     se.add_argument("tickers", nargs="*", help="specific tickers (default: universe)")
     se.add_argument("--limit", type=int, default=None, help="only the first N tickers")
     se.set_defaults(func=cmd_sentiment)
+
+    cp = sub.add_parser("copilot", help="AI co-pilot's take on the latest cycle (Copilot.md; opt-in)")
+    cp.set_defaults(func=cmd_copilot)
 
     sm = sub.add_parser("sim", help="strategy portfolio backtest (StrategyBacktest.md; ~10-15 min)")
     sm.add_argument("--years", type=int, default=3, help="lookback years (default 3)")

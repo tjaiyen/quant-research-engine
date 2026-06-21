@@ -1,0 +1,7 @@
+# Optional — enables the AI co-pilot (`track copilot`).
+#   ./.venv/bin/python -m pip install -r requirements-copilot.txt
+# Also requires an ANTHROPIC_API_KEY in the environment. The co-pilot is
+# ADVISORY ONLY (it never places trades) and OFF by default. WITHOUT the SDK or
+# a key, `track copilot` writes an informational "off" note and changes nothing.
+# Cost: a few cents per run on claude-opus-4-8.
+anthropic>=0.40
