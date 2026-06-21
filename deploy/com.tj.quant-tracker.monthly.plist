@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Monthly quant-tracker run (1st of the month 07:00 PT): paper cycle → paper
-  monitor → report. The cycle no-ops outside the 1st-5th buy window. Install:
+  Monthly quant-tracker run — fires 06:00 PT on days 1-5, runs:
+    screen (fresh picks) -> paper cycle -> paper monitor -> report.
+  Why 06:00 PT on days 1-5 (not 07:00 on day 1):
+    * The buy submits in the MOO window 9:25-9:28 ET = 6:25-6:28 PT, so the job
+      must START before it (screen ~3 min, then wait_for_moo_window catches it).
+    * run_monthly_cycle is idempotent — it trades only on the computed cycle
+      trading day and skips the others, so firing days 1-5 is robust to a
+      weekend/holiday 1st (it would otherwise miss the whole month).
+  Install / reinstall:
     cp deploy/com.tj.quant-tracker.monthly.plist ~/Library/LaunchAgents/
+    launchctl bootout gui/$(id -u)/com.tj.quant-tracker.monthly 2>/dev/null
     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tj.quant-tracker.monthly.plist
   Test once:  launchctl kickstart -k gui/$(id -u)/com.tj.quant-tracker.monthly
   Remove:     launchctl bootout gui/$(id -u)/com.tj.quant-tracker.monthly
@@ -18,12 +26,16 @@
         <string>/Users/user/dev/quant-tracker/bin/scheduled-run.sh</string>
         <string>monthly</string>
     </array>
+    <!-- Days 1-5 at 06:00 PT (before the 6:25-6:28 PT MOO window); the cycle
+         trades once on the real trading day and skips the rest. -->
     <key>StartCalendarInterval</key>
-    <dict>
-        <key>Day</key><integer>1</integer>
-        <key>Hour</key><integer>7</integer>
-        <key>Minute</key><integer>0</integer>
-    </dict>
+    <array>
+        <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Day</key><integer>2</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Day</key><integer>3</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Day</key><integer>4</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Day</key><integer>5</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
     <key>RunAtLoad</key>
     <false/>
     <key>StandardOutPath</key>

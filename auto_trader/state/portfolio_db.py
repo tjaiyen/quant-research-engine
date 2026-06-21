@@ -436,10 +436,30 @@ def log_system_event(
         )
 
 
+def get_system_events(days: int = 365, limit: int = 500) -> list[dict]:
+    """Return recent system_events rows (newest first), with details JSON parsed."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT event_type, event_time, description, details, trading_mode "
+            "FROM system_events ORDER BY event_time DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    out: list[dict] = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["details"] = json.loads(d["details"]) if d.get("details") else {}
+        except (json.JSONDecodeError, TypeError):
+            d["details"] = {}
+        out.append(d)
+    return out
+
+
 __all__ = [
     "SCHEMA_VERSION",
     "initialize_db",
     "get_connection",
+    "get_system_events",
     # Positions
     "upsert_position",
     "get_all_positions",

@@ -86,6 +86,15 @@ def cmd_screen(args: argparse.Namespace) -> int:
 
     results = run_screener(force_retrain=args.retrain)
     print_summary(results)
+    # Close the autonomous loop: refresh the auto_trader's screener cache so the
+    # monthly buy cycle reads fresh picks (copies the run JSON + stamps
+    # _cached_at). Best-effort — a cache hiccup must not fail the screen.
+    try:
+        from auto_trader.scripts.pre_run_screener import main as prep_main
+        prep_main(["--skip-run"])
+        print("  trader cache refreshed (monthly buy will use these picks)")
+    except Exception as exc:
+        print(f"  warning: could not refresh trader cache: {exc}", file=sys.stderr)
     return 0
 
 

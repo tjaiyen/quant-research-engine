@@ -251,7 +251,7 @@ def performance_note(snapshots: list[dict]) -> str:
 # ── Dashboard ────────────────────────────────────────────────────────────────
 
 def dashboard_note(regime: dict, latest_snapshot: dict, top_picks: list[dict],
-                   generated_at: str) -> str:
+                   generated_at: str, last_move: str | None = None) -> str:
     fm = {
         "title": "Dashboard",
         "type": "tracker-dashboard",
@@ -286,7 +286,8 @@ def dashboard_note(regime: dict, latest_snapshot: dict, top_picks: list[dict],
         f"({pct(float(regime.get('confidence', 0) or 0))}) · "
         f"**Paper value:** {money(latest_snapshot.get('total_value'))} · "
         f"**Unrealized:** {money(latest_snapshot.get('unrealized_pnl'))}\n\n"
-        f"See also: [[Regime]] · [[Performance]]\n\n"
+        + (f"🧠 **Last move:** {last_move}\n\n" if last_move else "")
+        + "See also: [[Decisions]] · [[Regime]] · [[Performance]]\n\n"
         f"## Latest top picks\n\n{picks_tbl}\n\n"
         f"## Open paper positions\n\n{positions_view}\n\n"
         f"## Recent screener runs\n\n{runs_view}\n"
@@ -419,6 +420,74 @@ def clusters_note(data: dict) -> str:
         f"(silhouette {sil_str}; {data.get('n_skipped', 0)} skipped for thin history).\n\n"
         f"## Cluster summary\n\n{summary}\n\n"
         f"## Members\n\n" + "\n\n".join(blocks) + "\n"
+    )
+    return document(fm, body)
+
+
+# ── Agent decision log (autonomous, first-person) ────────────────────────────
+
+# trade_history trigger_reason → plain language
+_TRADE_VERB = {
+    "NEW_BUY": "opened", "REBALANCE_BUY": "added to",
+    "STOP_LOSS": "stopped out of", "SIGNAL_EXIT": "exited (signal faded)",
+    "REBALANCE_SELL": "trimmed", "UNKNOWN": "traded",
+}
+
+
+def _decision_text(d: dict) -> str:
+    """Compose one first-person decision entry from a typed decision dict."""
+    when = str(d.get("when", ""))[:10]
+    kind = d.get("kind")
+    if kind == "screen":
+        top = ", ".join(s.get("ticker", "?") for s in (d.get("top") or [])[:5])
+        return (
+            f"🔭 **{when}** — I screened the market. Regime reads "
+            f"**{str(d.get('regime', 'unknown')).upper()}** "
+            f"({pct(d.get('regime_conf'))}). Of **{d.get('total_screened', 0)}** stocks, "
+            f"**{d.get('total_passed', 0)}** cleared my risk veto "
+            f"(veto rate {d.get('veto_rate', 0)}%). "
+            + (f"Strongest conviction: **{top}**." if top else "No clear standouts.")
+        )
+    if kind == "trades":
+        opened = [t for t in d.get("trades", []) if str(t.get("action")) == "BUY"]
+        closed = [t for t in d.get("trades", []) if str(t.get("action")) == "SELL"]
+        parts = []
+        if opened:
+            parts.append("opened/added: " + ", ".join(
+                f"{_TRADE_VERB.get(t.get('trigger_reason'), 'bought')} **{t.get('ticker')}**"
+                for t in opened[:8]))
+        if closed:
+            parts.append("sold: " + ", ".join(
+                f"{_TRADE_VERB.get(t.get('trigger_reason'), 'sold')} **{t.get('ticker')}**"
+                for t in closed[:8]))
+        return f"💰 **{when}** — I traded. " + (" · ".join(parts) if parts else "No fills.")
+    if kind == "daily":
+        det = d.get("details", {}) or {}
+        return (
+            f"🩺 **{when}** — Daily check. "
+            f"**{det.get('stop_hits', 0)}** stop-loss hit(s), "
+            f"**{det.get('decay_alerts', 0)}** signal(s) faded"
+            + (f", value **{money(d.get('total_value'))}**" if d.get("total_value") else "")
+            + "."
+        )
+    return f"• **{when}** — {d.get('description', d.get('kind', 'event'))}"
+
+
+def agent_log_note(decisions: list[dict]) -> str:
+    fm = {"title": "Decisions", "type": "tracker-decisions",
+          "as_of": decisions[0].get("when") if decisions else None,
+          "n_entries": len(decisions)}
+    if not decisions:
+        body = ("# 🧠 What I'm doing\n\n"
+                "_No decisions logged yet. Once I run a screen or a buy cycle, "
+                "I'll narrate each move here._\n")
+        return document(fm, body)
+    entries = "\n\n".join(_decision_text(d) for d in decisions)
+    body = (
+        "# 🧠 What I'm doing — my decision log\n\n"
+        "_I run on my own and explain every move here, newest first. This is "
+        "pretend money — I'm showing you my reasoning, not giving advice._\n\n"
+        f"{entries}\n"
     )
     return document(fm, body)
 

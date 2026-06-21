@@ -71,6 +71,59 @@ def _prune_stale(folder: Path, keep: set[str]) -> int:
     return removed
 
 
+def _decisions(trades: list[dict], max_entries: int = 40) -> list[dict]:
+    """Merge screens + trades + daily-monitor events into a typed, sorted feed."""
+    decisions: list[dict] = []
+
+    # Weekly screens — populated immediately (the autonomous screen already runs).
+    try:
+        from utils.db import fetch_screener_picks, list_screener_runs
+        for run in list_screener_runs(limit=20):
+            run_at = str(run.get("run_at"))
+            picks = sorted(fetch_screener_picks(run_at),
+                           key=lambda p: -(p.get("composite_score") or 0))
+            top = [{"ticker": p["ticker"]} for p in picks if p.get("top_overall_rank")][:5] \
+                or [{"ticker": p["ticker"]} for p in picks[:5]]
+            decisions.append({
+                "when": run_at, "kind": "screen",
+                "regime": run.get("regime_label"), "regime_conf": run.get("regime_confidence"),
+                "total_screened": run.get("total_screened"),
+                "total_passed": run.get("total_passed_veto"),
+                "veto_rate": run.get("veto_rate_pct"), "top": top,
+            })
+    except Exception as exc:
+        logger.debug("screen decisions skipped: %s", exc)
+
+    # Trades grouped by date (populates after the monthly buy).
+    by_date: dict[str, list[dict]] = {}
+    for t in trades:
+        d = str(t.get("executed_at", ""))[:10]
+        if d:
+            by_date.setdefault(d, []).append(t)
+    for d, ts in by_date.items():
+        decisions.append({"when": ts[0].get("executed_at", d), "kind": "trades", "trades": ts})
+
+    # Daily-monitor heartbeat — one entry per day (events are newest-first, so
+    # the first seen for a date is the latest run).
+    try:
+        from auto_trader.state.portfolio_db import get_system_events
+        seen_days: set[str] = set()
+        for e in get_system_events(limit=120):
+            if e.get("event_type") != "DAILY_MONITOR":
+                continue
+            day = str(e.get("event_time", ""))[:10]
+            if day in seen_days:
+                continue
+            seen_days.add(day)
+            decisions.append({"when": e.get("event_time"), "kind": "daily",
+                              "details": e.get("details", {})})
+    except Exception as exc:
+        logger.debug("event decisions skipped: %s", exc)
+
+    decisions.sort(key=lambda x: str(x.get("when", "")), reverse=True)
+    return decisions[:max_entries]
+
+
 def build_all() -> dict:
     """Regenerate every tracker note. Returns a summary of what was written."""
     root = tracker_dir()
@@ -111,24 +164,40 @@ def build_all() -> dict:
         written.append(f"Positions/{fname}")
     pruned = _prune_stale(pos_dir, keep)
 
-    # 3) Daily journal — one note per date that has fills.
+    # 3) Daily journal — one note per date that has fills (+ system events).
+    events_by_date: dict[str, list[dict]] = {}
+    try:
+        from auto_trader.state.portfolio_db import get_system_events
+        for e in get_system_events(limit=200):
+            ed = str(e.get("event_time", ""))[:10]
+            if ed:
+                events_by_date.setdefault(ed, []).append(e)
+    except Exception as exc:
+        logger.debug("system events unavailable: %s", exc)
     by_date: dict[str, list[dict]] = {}
     for t in paper["trades"]:
         d = str(t.get("executed_at", ""))[:10]
         if d:
             by_date.setdefault(d, []).append(t)
     for d, trades in by_date.items():
-        atomic_write(root / "Journal" / f"{d}.md", notes.journal_note(d, trades))
+        atomic_write(root / "Journal" / f"{d}.md",
+                     notes.journal_note(d, trades, events=events_by_date.get(d)))
         written.append(f"Journal/{d}.md")
 
     # 4) Performance equity curve.
     atomic_write(root / "Performance.md", notes.performance_note(snapshots))
     written.append("Performance.md")
 
-    # 5) Dashboard (top-level Dataview surface).
+    # 4b) Decisions feed — first-person narrative of every autonomous move.
+    decisions = _decisions(paper["trades"])
+    last_move = notes._decision_text(decisions[0]) if decisions else None
+    atomic_write(root / "Decisions.md", notes.agent_log_note(decisions))
+    written.append("Decisions.md")
+
+    # 5) Dashboard (top-level Dataview surface) — leads with the latest move.
     atomic_write(
         root / "Dashboard.md",
-        notes.dashboard_note(regime, latest_snapshot, top_picks, now_iso),
+        notes.dashboard_note(regime, latest_snapshot, top_picks, now_iso, last_move),
     )
     written.append("Dashboard.md")
 

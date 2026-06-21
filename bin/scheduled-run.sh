@@ -53,6 +53,8 @@ fail=0
       echo "--- paper monitor ---";  run paper monitor || { echo "FAIL: monitor"; fail=1; }
       ;;
     monthly)
+      # Fresh screen first so the buy reads a <10h-old cache (else it aborts stale).
+      echo "--- screen ---";         run screen        || { echo "FAIL: screen"; fail=1; }
       echo "--- paper cycle ---";    run paper cycle   || { echo "FAIL: cycle"; fail=1; }
       echo "--- paper monitor ---";  run paper monitor || { echo "FAIL: monitor"; fail=1; }
       ;;
