@@ -25,6 +25,13 @@ cd "$ROOT" || exit 1
 
 # ── Single-instance guard (atomic on POSIX; macOS has no flock) ──────────────
 LOCK_DIR="$LOG_DIR/.lock-${JOB:-none}"
+# Clear a STALE lock first: a kill -9 leaves the dir behind (the EXIT trap never
+# fired), which would silently skip every later run (e.g. days 2-5 of a monthly
+# window). >120 min old = stale → reclaim it.
+if [ -d "$LOCK_DIR" ] && [ -n "$(/usr/bin/find "$LOCK_DIR" -maxdepth 0 -mmin +120 2>/dev/null)" ]; then
+  echo "[$TS] reclaiming stale lock ($LOCK_DIR)" >> "$LOG"
+  rmdir "$LOCK_DIR" 2>/dev/null
+fi
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   echo "[$TS] another '$JOB' run is in progress ($LOCK_DIR) — skipping" >> "$LOG"
   exit 0
@@ -36,6 +43,15 @@ fail=0
 
 {
   echo "=== quant-tracker $JOB run: $TS ==="
+
+  # Schedule fire-times are LOCAL (launchd) and the plists assume Pacific — the
+  # MOO buy window is 6:25-6:28 PT. Warn loudly if the Mac isn't on PT.
+  TZNOW="$(/bin/date +%Z)"
+  case "$TZNOW" in
+    PST|PDT) ;;
+    *) echo "WARN: system timezone is $TZNOW, not Pacific — scheduled fire times"\
+            "assume PT (the monthly buy targets the 6:25-6:28 PT MOO window)." ;;
+  esac
 
   # Off-Drive preflight gate — abort the whole run if store/vault are unsafe.
   if ! run doctor; then
@@ -66,6 +82,13 @@ fail=0
   echo "--- report ---"; run report || echo "WARN: report had errors"
   echo "=== done: $(/bin/date '+%Y-%m-%d %H:%M:%S') (fail=$fail) ==="
 } >> "$LOG" 2>&1
+
+# Run-health beacon — surfaces silent scheduled failures on the dashboard
+# (a failed run otherwise only lives in a log nobody reads). Best-effort.
+STATUS=$([ "${fail:-0}" -eq 0 ] && echo ok || echo fail)
+printf '{"job":"%s","ended":"%s","status":"%s"}\n' \
+  "$JOB" "$(/bin/date '+%Y-%m-%dT%H:%M:%S')" "$STATUS" \
+  > "$ROOT/store/last_run.json" 2>/dev/null || true
 
 # Retain ~2 months of scheduled-run logs (runs even on early failure).
 /usr/bin/find "$LOG_DIR" -name 'sched-*.log' -mtime +60 -delete 2>/dev/null || true

@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 def _cagr(total_return: float, years: float) -> float:
     if years <= 0:
         return 0.0
+    if total_return <= -1.0:          # wiped out: (1+r) <= 0 → fractional power is
+        return -1.0                   # complex; report a total loss instead of crashing
     return float((1.0 + total_return) ** (1.0 / years) - 1.0)
 
 

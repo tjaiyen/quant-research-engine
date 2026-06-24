@@ -62,6 +62,23 @@ def test_dashboard_html_handles_empty():
     assert "$10,000" in out                              # default portfolio value
 
 
+def test_run_banner_states():
+    assert "FAILED" in html._run_banner({"job": "monthly", "ended": "x", "status": "fail"})
+    assert "No scheduled run" in html._run_banner(
+        {"job": "daily", "ended": "x", "status": "ok", "stale": True, "age_h": 50})
+    assert "healthy" in html._run_banner(
+        {"job": "daily", "ended": "x", "status": "ok", "stale": False})
+    assert html._run_banner({}) == ""   # no beacon → no banner
+
+
+def test_dashboard_html_shows_run_banner():
+    d = _sample()
+    d["last_run"] = {"job": "weekly", "ended": "2026-06-21T18:00:00",
+                     "status": "fail"}
+    out = html.dashboard_html(d)
+    assert 'class="runbar fail"' in out and "FAILED" in out
+
+
 def test_dashboard_html_escapes_injection():
     # Untrusted-looking text must not break out into markup (B13 hygiene).
     out = html.dashboard_html({

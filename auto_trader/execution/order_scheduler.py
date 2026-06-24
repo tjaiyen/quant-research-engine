@@ -20,9 +20,11 @@ def wait_for_moo_window(timeout_seconds: int = 1800, poll_interval: int = 30) ->
     """
     if is_moo_submission_window():
         return True
-    deadline = time.time() + timeout_seconds
+    # Monotonic clock so an NTP step / manual clock change can't make the
+    # deadline appear already-passed (instant false timeout).
+    deadline = time.monotonic() + timeout_seconds
     logger.info("Waiting for MOO window… timeout=%ds", timeout_seconds)
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         if is_moo_submission_window():
             logger.info("MOO window open — proceeding")
             return True

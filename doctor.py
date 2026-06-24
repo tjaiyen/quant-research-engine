@@ -165,7 +165,9 @@ def check_vault_canonical(vault_dir: str | Path) -> dict:
         )
     # 3) Must actually exist.
     if not abs_path.exists():
-        reasons.append("vault path does not exist on disk")
+        reasons.append("vault path does not exist on disk — if this is a fresh "
+                       "start or right after a reboot, Google Drive may not have "
+                       "finished syncing the mount yet; wait and retry")
 
     return {
         "role": "vault",

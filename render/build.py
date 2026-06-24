@@ -71,14 +71,31 @@ def _prune_stale(folder: Path, keep: set[str]) -> int:
     return removed
 
 
-_COPILOT_SIDECAR = Path(__file__).resolve().parent.parent / "store" / "last_copilot.json"
+_STORE = Path(__file__).resolve().parent.parent / "store"
+_COPILOT_SIDECAR = _STORE / "last_copilot.json"
+_RUN_BEACON = _STORE / "last_run.json"
 
 
 def _latest_copilot() -> dict:
     """The last cached co-pilot take (written by `track copilot`), or {}."""
     try:
-        import json
         return json.loads(_COPILOT_SIDECAR.read_text())
+    except Exception:
+        return {}
+
+
+def _latest_run() -> dict:
+    """The last scheduled-run health beacon (written by scheduled-run.sh), or {}.
+
+    Adds `stale`/`age_h` so the dashboard can flag a missed cadence (the
+    dead-man's-switch for silent launchd failures).
+    """
+    try:
+        d = json.loads(_RUN_BEACON.read_text())
+        ended = datetime.strptime(str(d.get("ended"))[:19], "%Y-%m-%dT%H:%M:%S")
+        age_h = (datetime.now() - ended).total_seconds() / 3600.0
+        d["age_h"], d["stale"] = round(age_h, 1), age_h > 36
+        return d
     except Exception:
         return {}
 
@@ -247,6 +264,7 @@ def build_all() -> dict:
             "positions": paper["positions"], "sentiment": sentiment,
             "decisions": [notes._decision_text(d) for d in decisions],
             "scorecard": scorecard, "copilot": _latest_copilot(),
+            "last_run": _latest_run(),
         }))
         written.append("Dashboard.html")
     except Exception as exc:

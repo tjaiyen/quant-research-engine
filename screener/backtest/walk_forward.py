@@ -281,8 +281,8 @@ def run_walk_forward(
             WindowResult(
                 train_end=str(w.date()),
                 eval_end=str(
-                    (w + pd.Timedelta(days=horizon_days * 2)).date()
-                ),
+                    (w + pd.Timedelta(days=horizon_days)).date()
+                ),  # label matches the realized-return window (_realized_return uses horizon_days)
                 regime=regime_data["regime"],
                 confidence=float(regime_data["confidence"]),
                 picks=[t for _, picks, *_ in per_sector_picks for t in picks],

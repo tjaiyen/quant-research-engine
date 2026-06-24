@@ -264,6 +264,22 @@ def _nav() -> str:
     return f'<nav class="nav">{links}</nav>'
 
 
+def _run_banner(lr: dict) -> str:
+    """Automation-health beacon: green=OK, red=failed, amber=stale (missed cadence)."""
+    if not lr:
+        return ""
+    job, ended = _esc(lr.get("job")), _esc(str(lr.get("ended")).replace("T", " "))
+    if lr.get("status") == "fail":
+        return (f'<div class="runbar fail">⚠ Last scheduled run (<strong>{job}</strong>) '
+                f'FAILED at {ended} — check <code>logs/</code>.</div>')
+    if lr.get("stale"):
+        return (f'<div class="runbar warn">⚠ No scheduled run in '
+                f'<strong>{_esc(lr.get("age_h"))}h</strong> (last: {job} at {ended}) — '
+                f'is the Mac asleep, or are the launchd agents loaded?</div>')
+    return (f'<div class="runbar ok">✓ Automation healthy — last run '
+            f'<strong>{job}</strong> at {ended}.</div>')
+
+
 def dashboard_html(data: dict) -> str:
     regime = data.get("regime") or {}
     rlabel = regime.get("label", "unknown")
@@ -318,6 +334,12 @@ def dashboard_html(data: dict) -> str:
   .nav {{ display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 22px; font-size: 13px; }}
   .nav a {{ color: #58a6ff; text-decoration: none; }}
   .nav a:hover {{ text-decoration: underline; }}
+  .runbar {{ border-radius: 10px; padding: 9px 14px; margin-bottom: 18px; font-size: 13px;
+    border: 1px solid; }}
+  .runbar.ok {{ background: #0f2417; border-color: #1f5132; color: #59d27e; }}
+  .runbar.fail {{ background: #2d1213; border-color: #6e2528; color: #ff7b72; }}
+  .runbar.warn {{ background: #2b2412; border-color: #6b5722; color: #e3b341; }}
+  .runbar code {{ font-family: ui-monospace, monospace; }}
   .grid {{ display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 22px; }}
   .kpi {{ background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 14px; }}
   .kpi-label {{ color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }}
@@ -370,6 +392,7 @@ def dashboard_html(data: dict) -> str:
     <span class="updated">Updated {_esc(str(as_of)[:16].replace("T", " "))} UTC</span>
   </header>
   {_nav()}
+  {_run_banner(data.get("last_run") or {})}
   <div class="grid">{kpis}</div>
 
   {_screener_stats(data.get("summary"))}
