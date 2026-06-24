@@ -492,6 +492,73 @@ def agent_log_note(decisions: list[dict]) -> str:
     return document(fm, body)
 
 
+# ── Strategy tournament ──────────────────────────────────────────────────────
+
+def tournament_note(data: dict) -> str:
+    ranked = data.get("ranked", []) or []
+    attr = data.get("attribution", {}) or {}
+    fm = {"title": "Tournament", "type": "tracker-tournament",
+          "as_of": data.get("as_of"), "n_variants": len(ranked),
+          "winner": attr.get("winner")}
+    if not ranked:
+        return document(fm, "# 🏆 Strategy tournament\n\n"
+                        "_No tournament run yet — `track tournament`._\n")
+
+    def _g(m, k):
+        v = (m or {}).get(k)
+        return v
+    rows = []
+    for r in ranked:
+        f, o = r.get("full", {}), r.get("out_sample", {})
+        tag = " ·control" if r.get("group") == "control" else ""
+        rows.append([
+            r.get("rank"), r.get("label") + tag,
+            pct(_g(f, "total_return")), pct(_g(f, "cagr")),
+            num(_g(f, "sharpe"), 2) if _g(f, "sharpe") is not None else "—",
+            pct(_g(f, "max_drawdown")), pct(_g(f, "excess")),
+            pct(_g(o, "total_return")),
+        ])
+    board = table(["#", "Strategy", "Total", "CAGR", "Sharpe", "MaxDD",
+                   "vs SPY", "OOS total"], rows)
+
+    # attribution blocks
+    ic = attr.get("signal_ic", {}) or {}
+    ic_tbl = table(["Signal", "IC (predicts return?)"],
+                   [[k, num(v, 3) if v is not None else "—"] for k, v in ic.items()])
+    tilt = attr.get("sector_tilt", []) or []
+    tilt_tbl = table(["Sector", "Winner weight"],
+                     [[t.get("sector"), pct(t.get("pct"))] for t in tilt]) if tilt else ""
+    reg = attr.get("regime_conditional", []) or []
+    reg_tbl = table(["Regime", "Winner avg/rebalance", "Rebalances"],
+                    [[x.get("regime"), pct(x.get("avg_return")), x.get("n")] for x in reg]) if reg else ""
+
+    body = (
+        "# 🏆 Strategy tournament\n\n"
+        f"> [!{'success' if attr.get('oos_holds') and attr.get('beat_spy',0)>0 else 'warning'}] Verdict\n"
+        f"> {attr.get('verdict','')}\n\n"
+        "_~20 strategy variants raced over real historical prices. A **hypothesis-"
+        "generator**, not proof: the winner is picked in-sample and re-checked "
+        "out-of-sample, and three 'dumb' controls (SPY, whole universe, random-20) "
+        "are the honesty bar._\n\n"
+        f"- Beat SPY by **{pct(attr.get('beat_spy'))}** · beat random by "
+        f"**{pct(attr.get('beat_random'))}** · out-of-sample rank "
+        f"**{attr.get('oos_rank','—')}/{len(ranked)}** · field spread "
+        f"{pct(attr.get('field_spread'))}\n\n"
+        f"## Leaderboard ({data.get('n_segments','?')} rebalances, "
+        f"{data.get('n_in_sample','?')} in-sample)\n\n{board}\n\n"
+        f"## Why the winner won\n\n"
+        f"**Which signals actually predicted returns** (Spearman IC over the window):\n\n{ic_tbl}\n\n"
+        + (f"**Winner's sector tilt:**\n\n{tilt_tbl}\n\n" if tilt_tbl else "")
+        + (f"**Winner by regime:**\n\n{reg_tbl}\n\n" if reg_tbl else "")
+        + (f"_Turnover: {pct(attr.get('turnover'))} of holdings change each rebalance._\n\n"
+           if attr.get("turnover") is not None else "")
+        + "_In-sample-aware: with ~20 variants on one price path, the leader is partly "
+        "luck (data-snooping). The controls + out-of-sample split + this verdict are "
+        "the guards. Forward-test a credible winner in paper before trusting it._\n"
+    )
+    return document(fm, body)
+
+
 # ── AI co-pilot (Claude reasoning overlay) ───────────────────────────────────
 
 def copilot_note(review: dict, context: dict | None = None) -> str:

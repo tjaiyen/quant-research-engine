@@ -71,6 +71,21 @@ def test_run_banner_states():
     assert html._run_banner({}) == ""   # no beacon → no banner
 
 
+def test_dashboard_html_shows_tournament_card():
+    d = _sample()
+    d["tournament"] = {"verdict": "Top-1 won, beat SPY.", "beat_spy": 0.05,
+                       "beat_random": 0.04, "oos_rank": 2,
+                       "leaderboard": [{"rank": 1, "label": "Top-1 per sector",
+                                        "group": "concentration", "total": 0.31,
+                                        "sharpe": 1.2, "excess": 0.05},
+                                       {"rank": 2, "label": "SPY buy-hold",
+                                        "group": "control", "total": 0.26,
+                                        "sharpe": 0.9, "excess": 0.0}]}
+    out = html.dashboard_html(d)
+    assert "Strategy tournament" in out and "Top-1 per sector" in out
+    assert "hypothesis, not proof" in out
+
+
 def test_dashboard_html_shows_run_banner():
     d = _sample()
     d["last_run"] = {"job": "weekly", "ended": "2026-06-21T18:00:00",

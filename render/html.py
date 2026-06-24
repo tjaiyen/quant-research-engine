@@ -254,9 +254,34 @@ def _copilot_section(copilot: dict) -> str:
 
 _NAV = [("Dashboard.md", "Dashboard"), ("Regime.md", "Regime"),
         ("Decisions.md", "Decisions"), ("Performance.md", "Performance"),
-        ("Scorecard.md", "Scorecard"), ("Review.md", "Review"),
-        ("Copilot.md", "Co-pilot"), ("Clusters.md", "Clusters"),
-        ("Sentiment.md", "Sentiment"), ("Start Here.md", "Start Here")]
+        ("Scorecard.md", "Scorecard"), ("Tournament.md", "Tournament"),
+        ("Review.md", "Review"), ("Copilot.md", "Co-pilot"),
+        ("Clusters.md", "Clusters"), ("Sentiment.md", "Sentiment"),
+        ("Start Here.md", "Start Here")]
+
+
+def _tournament_section(t: dict) -> str:
+    board = t.get("leaderboard") or []
+    if not board:
+        return ""
+    rows = []
+    for r in board[:12]:
+        tot = r.get("total")
+        tone = "pos" if (tot or 0) >= 0 else "neg"
+        ctl = " ·ctl" if r.get("group") == "control" else ""
+        rows.append(
+            f"<tr><td>{_esc(r.get('rank'))}</td>"
+            f"<td><strong>{_esc(r.get('label'))}</strong>{ctl}</td>"
+            f"<td class='{tone}'>{pct(tot)}</td>"
+            f"<td>{num(r.get('sharpe'), 2) if r.get('sharpe') is not None else '—'}</td>"
+            f"<td>{pct(r.get('excess'))}</td></tr>")
+    tbl = (f'<table class="tbl"><thead><tr><th>#</th><th>Strategy</th><th>Total</th>'
+           f'<th>Sharpe</th><th>vs SPY</th></tr></thead><tbody>{"".join(rows)}</tbody></table>')
+    strip = (f'<p class="muted">Winner beat SPY by <strong>{pct(t.get("beat_spy"))}</strong> · '
+             f'random by <strong>{pct(t.get("beat_random"))}</strong> · OOS rank '
+             f'{_esc(t.get("oos_rank","—"))}</p>')
+    return _card("\U0001F3C6 Strategy tournament <span class=\"muted\">(hypothesis, not proof)</span>",
+                 f'<p class="muted">{_esc(t.get("verdict",""))}</p>{strip}{tbl}')
 
 
 def _nav() -> str:
@@ -409,6 +434,7 @@ def dashboard_html(data: dict) -> str:
 
   {_positions_section(data.get("positions") or [])}
   {_sentiment_section(data.get("sentiment"))}
+  {_tournament_section(data.get("tournament") or {})}
   {_scorecard_section(data.get("scorecard"))}
   {_copilot_section(data.get("copilot") or {})}
 

@@ -15,6 +15,7 @@ Replaces the Dash app + Fly cron with local rituals:
     track clusters               k-means diversification clusters (Clusters.md)
     track sentiment              FinBERT news-sentiment overlay (Sentiment.md)
     track copilot                AI co-pilot's take on the latest cycle (Copilot.md; opt-in)
+    track tournament             race ~20 strategy variants over history (Tournament.md; ~15-25 min)
     track sim                    strategy portfolio backtest (StrategyBacktest.md; ~10-15 min)
     track backtest               retrospective skill check (Backtest.md; ~minutes)
     track status                 quick terminal summary
@@ -264,6 +265,55 @@ def cmd_sentiment(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tournament(args: argparse.Namespace) -> int:
+    _preflight()
+    import json
+    from datetime import datetime, timezone
+
+    from render import notes
+    from render.markdown import atomic_write, tracker_dir
+    from screener.tournament.attribution import attribute
+    from screener.tournament.panel import build_signal_panel
+    from screener.tournament.run import run_tournament
+    from screener.tournament.variants import default_variants
+
+    print("Building signal panel (first run is slow ~15-25 min; cached after)…")
+    panel = build_signal_panel(years=args.years, rebalance=args.rebalance,
+                               max_per_sector=args.max_per_sector,
+                               use_cache=not args.rebuild)
+    if len(panel.get("rows", [])) < 1:
+        print("Not enough cached history to build the panel — run `track seed` first.")
+        return 1
+    print(f"Panel: {len(panel['rows'])} rows over {len(panel['segments'])} rebalances. "
+          f"Running {len(default_variants())} variants…")
+    tour = run_tournament(panel, default_variants())
+    attr = attribute(tour, panel)
+    data = {"as_of": datetime.now(timezone.utc).isoformat(),
+            "n_segments": tour["n_segments"], "n_in_sample": tour["n_in_sample"],
+            "ranked": tour["ranked"], "attribution": attr,
+            "years": args.years, "rebalance": args.rebalance}
+    atomic_write(tracker_dir() / "Tournament.md", notes.tournament_note(data))
+    try:  # sidecar so the HTML dashboard can show a leaderboard card
+        sc = REPO_ROOT / "store" / "last_tournament.json"
+        sc.parent.mkdir(parents=True, exist_ok=True)
+        sc.write_text(json.dumps({
+            "as_of": data["as_of"], "winner": attr.get("winner"),
+            "verdict": attr.get("verdict"), "beat_spy": attr.get("beat_spy"),
+            "beat_random": attr.get("beat_random"), "oos_rank": attr.get("oos_rank"),
+            "leaderboard": [{"rank": r["rank"], "label": r["label"],
+                             "group": r["group"],
+                             "total": r["full"].get("total_return"),
+                             "sharpe": r["full"].get("sharpe"),
+                             "excess": r["full"].get("excess")} for r in tour["ranked"]],
+        }))
+    except Exception as exc:
+        print(f"  (tournament sidecar not written: {exc})", file=sys.stderr)
+    print(f"\n🏆 Winner: {attr.get('winner')}")
+    print(attr.get("verdict", ""))
+    print(f"→ {tracker_dir()}/Tournament.md")
+    return 0
+
+
 def cmd_copilot(args: argparse.Namespace) -> int:
     _preflight()
     import utils.config  # noqa: F401 — triggers load_dotenv so .env's ANTHROPIC_API_KEY is set
@@ -463,6 +513,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     cp = sub.add_parser("copilot", help="AI co-pilot's take on the latest cycle (Copilot.md; opt-in)")
     cp.set_defaults(func=cmd_copilot)
+
+    tn = sub.add_parser("tournament", help="race ~20 strategy variants over history (Tournament.md)")
+    tn.add_argument("--years", type=int, default=3)
+    tn.add_argument("--rebalance", choices=["month", "quarter"], default="quarter")
+    tn.add_argument("--max-per-sector", type=int, default=10, dest="max_per_sector")
+    tn.add_argument("--rebuild", action="store_true", help="ignore the cached panel")
+    tn.set_defaults(func=cmd_tournament)
 
     sm = sub.add_parser("sim", help="strategy portfolio backtest (StrategyBacktest.md; ~10-15 min)")
     sm.add_argument("--years", type=int, default=3, help="lookback years (default 3)")

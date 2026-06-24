@@ -74,12 +74,21 @@ def _prune_stale(folder: Path, keep: set[str]) -> int:
 _STORE = Path(__file__).resolve().parent.parent / "store"
 _COPILOT_SIDECAR = _STORE / "last_copilot.json"
 _RUN_BEACON = _STORE / "last_run.json"
+_TOURNAMENT_SIDECAR = _STORE / "last_tournament.json"
 
 
 def _latest_copilot() -> dict:
     """The last cached co-pilot take (written by `track copilot`), or {}."""
     try:
         return json.loads(_COPILOT_SIDECAR.read_text())
+    except Exception:
+        return {}
+
+
+def _latest_tournament() -> dict:
+    """The last tournament leaderboard (written by `track tournament`), or {}."""
+    try:
+        return json.loads(_TOURNAMENT_SIDECAR.read_text())
     except Exception:
         return {}
 
@@ -264,7 +273,7 @@ def build_all() -> dict:
             "positions": paper["positions"], "sentiment": sentiment,
             "decisions": [notes._decision_text(d) for d in decisions],
             "scorecard": scorecard, "copilot": _latest_copilot(),
-            "last_run": _latest_run(),
+            "last_run": _latest_run(), "tournament": _latest_tournament(),
         }))
         written.append("Dashboard.html")
     except Exception as exc:
