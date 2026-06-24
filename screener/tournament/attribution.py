@@ -29,16 +29,23 @@ def _spearman(xs: list[float], ys: list[float]) -> float | None:
 
 
 def _panel_signal_ic(panel: dict) -> dict:
-    """Spearman IC of each signal vs realized forward return, across all rows."""
+    """Cross-sectional Spearman IC of each signal vs forward return — computed
+    PER rebalance date, then averaged (the standard IC; pooling all dates into
+    one correlation conflates cross-sectional rank with time-series drift)."""
+    rows_by_date: dict = defaultdict(list)
+    for r in panel.get("rows", []):
+        rows_by_date[r["d0"]].append(r)
     out = {}
     for sig in SIGNALS:
-        xs, ys = [], []
-        for r in panel.get("rows", []):
-            v = (r.get("signals") or {}).get(sig)
-            fwd = r.get("fwd_return")
-            if v is not None and fwd is not None:
-                xs.append(v); ys.append(fwd)
-        out[sig] = _spearman(xs, ys)
+        ics = []
+        for rows in rows_by_date.values():
+            pairs = [((r.get("signals") or {}).get(sig), r.get("fwd_return")) for r in rows]
+            pairs = [(x, y) for x, y in pairs if x is not None and y is not None]
+            if len(pairs) >= 5:
+                ic = _spearman([p[0] for p in pairs], [p[1] for p in pairs])
+                if ic is not None:
+                    ics.append(ic)
+        out[sig] = (sum(ics) / len(ics)) if ics else None
     return out
 
 
@@ -110,13 +117,17 @@ def attribute(tour: dict, panel: dict) -> dict:
         ranking_has_signal = (default["full"].get("total_return", 0.0)
                               > inverse["full"].get("total_return", 0.0))
 
-    oos_holds = bool(oos_rank and oos_rank <= max(3, len(results) // 4))
-    verdict = _verdict(winner, beat_spy, beat_random, oos_holds, spread, ranking_has_signal)
+    n_oos = max(0, tour.get("n_segments", 0) - tour.get("n_in_sample", 0))
+    oos_reliable = n_oos >= 2
+    oos_holds = bool(oos_reliable and oos_rank and oos_rank <= max(3, len(results) // 4))
+    verdict = _verdict(winner, beat_spy, beat_random, oos_holds, spread,
+                       ranking_has_signal, oos_reliable)
 
     return {
         "winner": winner["label"],
         "beat_spy": beat_spy, "beat_random": beat_random,
-        "oos_rank": oos_rank, "oos_holds": oos_holds,
+        "oos_rank": oos_rank, "oos_holds": oos_holds, "oos_reliable": oos_reliable,
+        "n_oos": n_oos,
         "field_spread": spread, "ranking_has_signal": ranking_has_signal,
         "signal_ic": _panel_signal_ic(panel),
         "sector_tilt": _sector_tilt(winner, panel),
@@ -126,7 +137,8 @@ def attribute(tour: dict, panel: dict) -> dict:
     }
 
 
-def _verdict(winner, beat_spy, beat_random, oos_holds, spread, ranking_has_signal) -> str:
+def _verdict(winner, beat_spy, beat_random, oos_holds, spread,
+             ranking_has_signal, oos_reliable=True) -> str:
     name = winner["label"]
     if beat_random <= 0:
         return (f"⚠ No real edge: the best strategy (**{name}**) did not beat a "
@@ -134,6 +146,10 @@ def _verdict(winner, beat_spy, beat_random, oos_holds, spread, ranking_has_signa
     if beat_spy <= 0:
         return (f"**{name}** beat random but **not** SPY — the screener adds some "
                 f"selection value, but buy-and-hold SPY would have done better.")
+    if not oos_reliable:
+        return (f"**{name}** led in-sample and beat SPY (+{beat_spy*100:.1f}%) and "
+                f"random (+{beat_random*100:.1f}%), but there were **too few rebalances "
+                f"for an out-of-sample check** — treat as in-sample only; run more years.")
     if not oos_holds:
         return (f"**{name}** led in-sample and beat SPY (+{beat_spy*100:.1f}%), but "
                 f"it did **not** hold up out-of-sample — likely curve-fit. Hypothesis only.")

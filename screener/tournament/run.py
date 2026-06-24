@@ -58,10 +58,10 @@ def _segment(seg: dict, seg_rows: list[dict], spec: dict) -> tuple[float, list[s
             pool = sorted(r["ticker"] for r in seg_rows)
             if not pool:
                 return (0.0, [])
-            # deterministic pseudo-random pick seeded by the segment date
-            seed = sum(ord(c) for c in str(seg.get("d0", "")))
-            idx = sorted({(seed * (i + 7)) % len(pool) for i in range(20)})
-            held = [pool[i] for i in idx]
+            # Proper unbiased sample of up to 20 names, deterministic per segment
+            # (seeded by the date string — reproducible, but a fair benchmark).
+            import random as _random
+            held = _random.Random(str(seg.get("d0", ""))).sample(pool, min(20, len(pool)))
             rmap = {r["ticker"]: r["fwd_return"] for r in seg_rows}
             rets = [rmap[t] for t in held if rmap.get(t) is not None]
             return (sum(rets) / len(rets) if rets else 0.0, held)
