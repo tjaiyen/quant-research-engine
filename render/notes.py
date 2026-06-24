@@ -536,6 +536,13 @@ def tournament_note(data: dict) -> str:
         "# 🏆 Strategy tournament\n\n"
         f"> [!{'success' if attr.get('oos_holds') and attr.get('beat_spy',0)>0 else 'warning'}] Verdict\n"
         f"> {attr.get('verdict','')}\n\n"
+        + ("> [!danger] Engine ranking health\n"
+           "> ⚠ The engine's own composite ranking showed **no edge** this window — the "
+           "*worst*-ranked picks beat the best-ranked, and the signal ICs are ~0. Either "
+           "the signal weighting needs re-examination, or this strong-index window simply "
+           "favored buy-and-hold (the index beat most active stock-picking). Investigate, "
+           "don't deploy.\n\n"
+           if attr.get("ranking_has_signal") is False else "")
         "_~20 strategy variants raced over real historical prices. A **hypothesis-"
         "generator**, not proof: the winner is picked in-sample and re-checked "
         "out-of-sample, and three 'dumb' controls (SPY, whole universe, random-20) "
