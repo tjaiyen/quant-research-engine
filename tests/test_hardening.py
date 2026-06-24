@@ -20,11 +20,22 @@ def test_doctor_rejects_synced_store():
 
 def test_doctor_rejects_non_canonical_vault():
     import doctor
-    # A local /tmp path: not on a sync mount AND missing 'My Drive 2'.
+    # A local /tmp path: not on a sync mount AND not the CloudStorage mount.
     r = doctor.check_vault_canonical("/tmp/not-the-vault")
     assert r["safe"] is False
     reasons = " ".join(r["reasons"]).lower()
-    assert "my drive 2" in reasons or "cloud-sync" in reasons
+    assert "cloud-sync" in reasons or "cloudstorage" in reasons
+
+
+def test_heal_drive_suffix_resolves_volatile_segment(tmp_path):
+    import doctor
+    real = tmp_path / "My Drive" / "vault"   # Drive currently shows this
+    real.mkdir(parents=True)
+    stale = tmp_path / "My Drive 2" / "vault"  # stale config points here (gone)
+    assert doctor._heal_drive_suffix(stale) == real        # flips to the existing one
+    assert doctor._heal_drive_suffix(real) == real         # existing path unchanged
+    missing = tmp_path / "My Drive 2" / "nope"             # neither exists
+    assert doctor._heal_drive_suffix(missing) == missing   # returned as-is, no crash
 
 
 def test_doctor_store_local_ok(tmp_path):

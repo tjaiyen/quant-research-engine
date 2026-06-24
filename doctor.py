@@ -11,10 +11,12 @@ distinct path roles:
     mistake this guard refuses.
 
   * VAULT  (where Markdown is rendered for Obsidian)  MUST be the canonical
-    CloudStorage "My Drive 2" mount. A stale path missing the " 2" silently
-    points at an orphaned, non-synced copy — the trap that once killed the
-    cron (see memory: jobhunt-vault-canonical-path). The guard fails closed if
-    the vault is not the canonical synced path.
+    CloudStorage File Stream mount. The 'My Drive' / 'My Drive 2' folder name
+    is VOLATILE — Google Drive flips the " 2" suffix on its own, so it is NEVER
+    hardcoded; resolve_vault_dir self-heals to whichever variant exists (see
+    memory: jobhunt-vault-canonical-path). The load-bearing check is that the
+    path is the CloudStorage mount (not a bare ~/My Drive orphan) and exists;
+    the guard fails closed otherwise.
 
 YOU MUST run this (exit 0) before creating any DB or rendering to the vault.
 Non-zero exit ⇒ STOP.
@@ -61,6 +63,25 @@ def _real(p: str | Path) -> Path:
         return Path(p).resolve()
     except Exception:
         return Path(os.path.abspath(p))
+
+
+def _heal_drive_suffix(p: Path) -> Path:
+    """Self-heal the volatile 'My Drive' <-> 'My Drive 2' segment.
+
+    Google Drive flips the ' 2' suffix unpredictably (memory:
+    jobhunt-vault-canonical-path). If ``p`` doesn't exist but the sibling-
+    suffixed path does, return that. NEVER hardcode the suffix — resolve it
+    against what's actually on disk.
+    """
+    if p.exists():
+        return p
+    s = str(p)
+    for a, b in (("/My Drive 2/", "/My Drive/"), ("/My Drive/", "/My Drive 2/")):
+        if a in s:
+            alt = Path(s.replace(a, b, 1))
+            if alt.exists():
+                return alt
+    return p
 
 
 def fs_type_for(abs_path: Path) -> str:
@@ -133,11 +154,14 @@ def check_vault_canonical(vault_dir: str | Path) -> dict:
     on_sync, _ = _is_synced(abs_path)
     if not on_sync:
         reasons.append("vault is NOT on a cloud-sync mount (expected Google Drive)")
-    # 2) Must be the canonical 'My Drive 2' path (the load-bearing ' 2').
-    if "my drive 2" not in hay:
+    # 2) Must be the CloudStorage File Stream mount, NOT the orphaned ~/My Drive
+    #    home copy. The 'My Drive'/'My Drive 2' suffix is VOLATILE (Drive flips
+    #    it; resolve_vault_dir self-heals it) — the load-bearing marker is the
+    #    CloudStorage path, not the literal ' 2'.
+    if "/library/cloudstorage/googledrive-" not in hay:
         reasons.append(
-            "vault path is missing the canonical 'My Drive 2' segment "
-            "(a path without the ' 2' points at the orphaned non-synced copy)"
+            "vault is not the CloudStorage File Stream mount "
+            "(a bare ~/My Drive path is the orphaned, non-synced copy)"
         )
     # 3) Must actually exist.
     if not abs_path.exists():
@@ -162,8 +186,12 @@ def resolve_store_dir() -> Path:
 
 
 def resolve_vault_dir() -> Path:
-    """Where Markdown is rendered. VAULT_PATH may override; default canonical."""
-    return _real(os.getenv("VAULT_PATH", CANONICAL_VAULT))
+    """Where Markdown is rendered. VAULT_PATH may override; default canonical.
+
+    Self-heals the volatile Drive suffix so a 'My Drive' <-> 'My Drive 2' flip
+    (which Drive does on its own) doesn't break the gate or the renderer.
+    """
+    return _heal_drive_suffix(_real(os.getenv("VAULT_PATH", CANONICAL_VAULT)))
 
 
 def run() -> dict:
@@ -190,7 +218,9 @@ def main(argv: list[str]) -> int:
         else:
             print("\nFAIL: fix the path(s) above before creating a DB or rendering.")
             print("  store/  must be a LOCAL path (keep it under ~/dev/quant-tracker).")
-            print(f"  VAULT_PATH must be the canonical mount:\n    {CANONICAL_VAULT}")
+            print("  VAULT  must be the CloudStorage File Stream mount and exist")
+            print("         (the 'My Drive'/'My Drive 2' suffix is auto-resolved):")
+            print(f"    {resolve_vault_dir()}")
     return 0 if report["all_safe"] else 1
 
 

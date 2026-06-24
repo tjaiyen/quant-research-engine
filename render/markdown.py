@@ -30,9 +30,28 @@ _CANONICAL_VAULT = (
 )
 
 
+def _heal_drive_suffix(p: Path) -> Path:
+    """Mirror of doctor._heal_drive_suffix (kept here to avoid the root import).
+
+    Google Drive flips the 'My Drive' <-> 'My Drive 2' suffix on its own; if the
+    configured path doesn't exist but the sibling-suffixed one does, use that —
+    never hardcode the suffix (memory: jobhunt-vault-canonical-path).
+    """
+    if p.exists():
+        return p
+    s = str(p)
+    for a, b in (("/My Drive 2/", "/My Drive/"), ("/My Drive/", "/My Drive 2/")):
+        if a in s:
+            alt = Path(s.replace(a, b, 1))
+            if alt.exists():
+                return alt
+    return p
+
+
 def vault_root() -> Path:
-    """The Investment_AI vault dir. VAULT_PATH env overrides the canonical mount."""
-    return Path(os.getenv("VAULT_PATH", _CANONICAL_VAULT))
+    """The Investment_AI vault dir. VAULT_PATH env overrides; the volatile
+    'My Drive'/'My Drive 2' suffix is auto-resolved to whichever exists."""
+    return _heal_drive_suffix(Path(os.getenv("VAULT_PATH", _CANONICAL_VAULT)))
 
 
 def tracker_dir() -> Path:
