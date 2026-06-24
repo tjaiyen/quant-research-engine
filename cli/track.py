@@ -303,6 +303,15 @@ def cmd_copilot(args: argparse.Namespace) -> int:
         "recent_decisions": [notes._decision_text(d) for d in decisions[:8]],
     }
     review = copilot_review(context)
+    # Cache the take off-Drive so the HTML dashboard can show it without an API call.
+    try:
+        import json
+        sidecar = REPO_ROOT / "store" / "last_copilot.json"
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        sidecar.write_text(json.dumps({**review, "as_of": context["as_of"],
+                                       "regime": context.get("regime", {})}))
+    except Exception as exc:
+        print(f"  (could not cache co-pilot take: {exc})", file=sys.stderr)
     atomic_write(tracker_dir() / "Copilot.md", notes.copilot_note(review, context))
     if review.get("available"):
         print(f"Co-pilot take written → {tracker_dir()}/Copilot.md")

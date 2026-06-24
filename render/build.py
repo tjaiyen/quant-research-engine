@@ -71,6 +71,18 @@ def _prune_stale(folder: Path, keep: set[str]) -> int:
     return removed
 
 
+_COPILOT_SIDECAR = Path(__file__).resolve().parent.parent / "store" / "last_copilot.json"
+
+
+def _latest_copilot() -> dict:
+    """The last cached co-pilot take (written by `track copilot`), or {}."""
+    try:
+        import json
+        return json.loads(_COPILOT_SIDECAR.read_text())
+    except Exception:
+        return {}
+
+
 def _decisions(trades: list[dict], max_entries: int = 40) -> list[dict]:
     """Merge screens + trades + daily-monitor events into a typed, sorted feed."""
     decisions: list[dict] = []
@@ -202,6 +214,7 @@ def build_all() -> dict:
     written.append("Dashboard.md")
 
     # 6) Scorecard — past picks vs actual forward returns (best-effort, DB-only).
+    scorecard = None
     try:
         from screener.backtest.scorecard import compute_scorecard
 
@@ -217,6 +230,20 @@ def build_all() -> dict:
         written.append("Review.md")
     except Exception as exc:
         logger.debug("scorecard/review skipped: %s", exc)
+
+    # 8) Visual HTML dashboard (self-contained; auto-refreshing in a browser).
+    try:
+        from render import html as _html
+        atomic_write(root / "Dashboard.html", _html.dashboard_html({
+            "as_of": now_iso, "regime": regime, "top_picks": top_picks,
+            "latest_snapshot": latest_snapshot, "snapshots": snapshots,
+            "positions": paper["positions"], "decisions": [
+                notes._decision_text(d) for d in decisions],
+            "scorecard": scorecard, "copilot": _latest_copilot(),
+        }))
+        written.append("Dashboard.html")
+    except Exception as exc:
+        logger.debug("html dashboard skipped: %s", exc)
 
     return {
         "vault": str(root),
