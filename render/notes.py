@@ -543,7 +543,7 @@ def tournament_note(data: dict) -> str:
            "favored buy-and-hold (the index beat most active stock-picking). Investigate, "
            "don't deploy.\n\n"
            if attr.get("ranking_has_signal") is False else "")
-        "_~20 strategy variants raced over real historical prices. A **hypothesis-"
+        + "_~20 strategy variants raced over real historical prices. A **hypothesis-"
         "generator**, not proof: the winner is picked in-sample and re-checked "
         "out-of-sample, and three 'dumb' controls (SPY, whole universe, random-20) "
         "are the honesty bar._\n\n"
