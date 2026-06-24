@@ -64,10 +64,19 @@ def get_client() -> Any:
     creds = get_alpaca_credentials()
 
     if use_mock_broker() or creds.get("mock"):
+        import os
+        from pathlib import Path
+
         from mock_broker import MockAlpacaClient
 
-        _client = MockAlpacaClient()
-        logger.info("Alpaca client: MOCK (in-memory, no network)")
+        # File-backed so the paper account survives across the loop's separate
+        # processes (cycle/monitor/report). Off-Drive under store/; overridable.
+        state_path = os.getenv(
+            "MOCK_BROKER_STATE",
+            str(Path(__file__).resolve().parents[2] / "store" / "mock_broker.json"),
+        )
+        _client = MockAlpacaClient(state_path=state_path)
+        logger.info("Alpaca client: MOCK (file-backed paper account: %s)", state_path)
         # Smoke-check the surface
         acct = _client.get_account()
         logger.info(

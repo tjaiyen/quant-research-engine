@@ -22,7 +22,12 @@ Position accounting:
 """
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 MOCK_PRICE: float = 100.0
 
@@ -77,14 +82,50 @@ class _MockPosition:
 
 
 class MockAlpacaClient:
-    """In-memory broker. Single-process, single-instance — fine for tests + paper."""
+    """Mock broker. Optionally file-backed so paper state survives across the
+    separate processes of the autonomous loop (cycle → monitor → report each run
+    in their own `track` process). Without ``state_path`` it's pure in-memory —
+    that's what unit tests construct, so they stay isolated.
+    """
 
-    def __init__(self, cash: float = 10_000.0) -> None:
+    def __init__(self, cash: float = 10_000.0,
+                 state_path: str | Path | None = None) -> None:
         self._cash: float = float(cash)
         # ticker → {"qty": float, "cost": float}
         self._positions: dict[str, dict[str, float]] = {}
         self._orders: dict[str, MockOrder] = {}
         self._order_seq: int = 0
+        self._state_path: Path | None = Path(state_path) if state_path else None
+        if self._state_path:
+            self._load()
+
+    # ── Persistence (file-backed paper account) ───────────────────────────
+    def _load(self) -> None:
+        try:
+            if self._state_path and self._state_path.exists():
+                d = json.loads(self._state_path.read_text())
+                self._cash = float(d.get("cash", self._cash))
+                self._positions = {
+                    k: {"qty": float(v["qty"]), "cost": float(v["cost"])}
+                    for k, v in (d.get("positions") or {}).items()
+                }
+                self._order_seq = int(d.get("order_seq", 0))
+        except Exception as exc:           # corrupt/unreadable → keep defaults
+            logger.warning("mock broker state load failed (%s); starting fresh", exc)
+
+    def _save(self) -> None:
+        if not self._state_path:
+            return
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._state_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({
+                "cash": self._cash, "positions": self._positions,
+                "order_seq": self._order_seq,
+            }))
+            tmp.replace(self._state_path)   # atomic
+        except Exception as exc:
+            logger.warning("mock broker state save failed (%s)", exc)
 
     # ── Account / Clock / Calendar ────────────────────────────────────────
     def get_account(self) -> _MockAccount:
@@ -165,6 +206,7 @@ class MockAlpacaClient:
         order = MockOrder(symbol, side, oid, qty=qty, notional=notional)
         order.time_in_force = time_in_force
         self._orders[oid] = order
+        self._save()   # persist the new holdings/cash so the next process sees them
         return order
 
     def get_order(self, order_id: str) -> MockOrder:
