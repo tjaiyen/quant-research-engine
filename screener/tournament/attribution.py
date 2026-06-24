@@ -76,6 +76,33 @@ def _regime_conditional(winner: dict, panel: dict) -> list[dict]:
             for k, v in by_reg.items()]
 
 
+def _direction_split(tour: dict, panel: dict) -> dict:
+    """Default strategy vs SPY, split by realized SPY direction (up/down quarters)
+    and by the engine's own regime label — reveals defensive vs offensive character."""
+    segs = panel.get("segments", [])
+    res = {r["label"]: r for r in tour.get("results", [])}
+    deflt = res.get("Regime-blended (default)")
+    if not deflt or not segs:
+        return {}
+    dr = deflt.get("seg_returns", [])
+    spy = [s.get("spy_return") or 0.0 for s in segs]
+
+    def block(idx):
+        if not idx:
+            return {"engine": 0.0, "spy": 0.0, "excess": 0.0, "n": 0}
+        e = sum(dr[i] for i in idx) / len(idx)
+        s = sum(spy[i] for i in idx) / len(idx)
+        return {"engine": e, "spy": s, "excess": e - s, "n": len(idx)}
+
+    up = [i for i, v in enumerate(spy) if v > 0]
+    dn = [i for i, v in enumerate(spy) if v <= 0]
+    by_regime = defaultdict(list)
+    for i, s in enumerate(segs):
+        by_regime[s.get("regime") or "?"].append(i)
+    return {"up": block(up), "down": block(dn),
+            "by_regime": {k: block(v) for k, v in by_regime.items()}}
+
+
 def _turnover(winner: dict) -> float | None:
     holds = [set(h) for h in winner.get("holdings", [])]
     if len(holds) < 2:
@@ -123,11 +150,25 @@ def attribute(tour: dict, panel: dict) -> dict:
     verdict = _verdict(winner, beat_spy, beat_random, oos_holds, spread,
                        ranking_has_signal, oos_reliable)
 
+    direction = _direction_split(tour, panel)
+    # Character: defensive if it beats SPY in down quarters but lags in up.
+    character = None
+    up, dn = direction.get("up", {}), direction.get("down", {})
+    if dn.get("n") and up.get("n"):
+        if dn.get("excess", 0) > 0 and up.get("excess", 0) < 0:
+            character = ("defensive / low-beta — it **outperformed SPY by "
+                         f"{dn['excess']*100:+.1f}%/quarter in down quarters** but lagged "
+                         f"by {up['excess']*100:+.1f}%/quarter in up quarters. It protects in "
+                         "drawdowns and gives up upside in rallies; over a mostly-up window "
+                         "it nets behind the index. Not 'broken' — a hedge, not an index-beater.")
+        elif up.get("excess", 0) > 0 and dn.get("excess", 0) < 0:
+            character = "offensive / high-beta — it beats SPY in up quarters but loses more in down quarters."
+
     return {
         "winner": winner["label"],
         "beat_spy": beat_spy, "beat_random": beat_random,
         "oos_rank": oos_rank, "oos_holds": oos_holds, "oos_reliable": oos_reliable,
-        "n_oos": n_oos,
+        "n_oos": n_oos, "direction": direction, "character": character,
         "field_spread": spread, "ranking_has_signal": ranking_has_signal,
         "signal_ic": _panel_signal_ic(panel),
         "sector_tilt": _sector_tilt(winner, panel),

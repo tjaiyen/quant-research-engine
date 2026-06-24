@@ -88,7 +88,9 @@ def build_signal_panel(years: int = 3, rebalance: str = "quarter",
         spy_ret = _fwd_return("SPY", d0, d1)
         panel["segments"].append({
             "d0": str(d0.date()), "d1": str(d1.date()),
-            "regime": regime.get("label"), "regime_conf": regime.get("confidence"),
+            # _regime_at returns the label under "regime" (not "label").
+            "regime": regime.get("regime") or regime.get("label"),
+            "regime_conf": regime.get("confidence"),
             "spy_return": spy_ret,
         })
         for t, ph in histories.items():

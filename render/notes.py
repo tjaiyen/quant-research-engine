@@ -531,6 +531,14 @@ def tournament_note(data: dict) -> str:
     reg = attr.get("regime_conditional", []) or []
     reg_tbl = table(["Regime", "Winner avg/rebalance", "Rebalances"],
                     [[x.get("regime"), pct(x.get("avg_return")), x.get("n")] for x in reg]) if reg else ""
+    direction = attr.get("direction", {}) or {}
+    dir_rows = []
+    for lbl, k in [("Up quarters", "up"), ("Down quarters", "down")]:
+        b = direction.get(k)
+        if b and b.get("n"):
+            dir_rows.append([lbl, b["n"], pct(b["engine"]), pct(b["spy"]), pct(b["excess"])])
+    dir_tbl = table(["Market", "Quarters", "Engine /q", "SPY /q", "Excess /q"],
+                    dir_rows) if dir_rows else ""
 
     body = (
         "# 🏆 Strategy tournament\n\n"
@@ -543,6 +551,8 @@ def tournament_note(data: dict) -> str:
            "favored buy-and-hold (the index beat most active stock-picking). Investigate, "
            "don't deploy.\n\n"
            if attr.get("ranking_has_signal") is False else "")
+        + (f"> [!tip] Strategy character\n> The default strategy is **{attr.get('character')}**\n\n"
+           if attr.get("character") else "")
         + "_~20 strategy variants raced over real historical prices. A **hypothesis-"
         "generator**, not proof: the winner is picked in-sample and re-checked "
         "out-of-sample, and three 'dumb' controls (SPY, whole universe, random-20) "
@@ -555,6 +565,9 @@ def tournament_note(data: dict) -> str:
         f"{data.get('n_in_sample','?')} in-sample)\n\n{board}\n\n"
         f"## Why the winner won\n\n"
         f"**Which signals actually predicted returns** (Spearman IC over the window):\n\n{ic_tbl}\n\n"
+        + (f"## The default strategy vs market direction\n\n"
+           f"_The most useful cut: how the engine's own (regime-blended) strategy did "
+           f"vs SPY in up vs down quarters._\n\n{dir_tbl}\n\n" if dir_tbl else "")
         + (f"**Winner's sector tilt:**\n\n{tilt_tbl}\n\n" if tilt_tbl else "")
         + (f"**Winner by regime:**\n\n{reg_tbl}\n\n" if reg_tbl else "")
         + (f"_Turnover: {pct(attr.get('turnover'))} of holdings change each rebalance._\n\n"
