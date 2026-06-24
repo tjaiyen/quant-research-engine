@@ -234,11 +234,18 @@ def build_all() -> dict:
     # 8) Visual HTML dashboard (self-contained; auto-refreshing in a browser).
     try:
         from render import html as _html
+        try:
+            from utils.db import list_sentiment
+            sentiment = list_sentiment()
+        except Exception:
+            sentiment = []
         atomic_write(root / "Dashboard.html", _html.dashboard_html({
             "as_of": now_iso, "regime": regime, "top_picks": top_picks,
+            "summary": (results or {}).get("summary"),
+            "sectors": (results or {}).get("sectors"),
             "latest_snapshot": latest_snapshot, "snapshots": snapshots,
-            "positions": paper["positions"], "decisions": [
-                notes._decision_text(d) for d in decisions],
+            "positions": paper["positions"], "sentiment": sentiment,
+            "decisions": [notes._decision_text(d) for d in decisions],
             "scorecard": scorecard, "copilot": _latest_copilot(),
         }))
         written.append("Dashboard.html")
