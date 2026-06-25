@@ -86,12 +86,53 @@ def _ticker(sym, names: dict | None = None) -> str:
     return f'<strong>{_esc(sym)}</strong>{co}'
 
 
-def _kpi(label: str, value: str, sub: str = "", tone: str = "", key: str = "") -> str:
-    cls = f" {tone}" if tone else ""
+def _kpi(label: str, value: str, sub: str = "", tone: str = "", key: str = "",
+         big: bool = False) -> str:
+    cls = (" big" if big else "") + (f" {tone}" if tone else "")
     sub_html = f'<div class="kpi-sub">{_esc(sub)}</div>' if sub else ""
     label_html = _term(key) if key else _esc(label)
     return (f'<div class="kpi{cls}"><div class="kpi-label">{label_html}</div>'
             f'<div class="kpi-val">{_esc(value)}</div>{sub_html}</div>')
+
+
+def _headline(rlabel: str, total_value, pnl, n_pos: int) -> str:
+    """One plain-English glance line: market mood + portfolio + P&L + holdings."""
+    mood = {"bull": "Calm, rising", "bear": "Falling",
+            "sideways": "Choppy"}.get(str(rlabel).lower(), str(rlabel).title())
+    val = money(total_value) if total_value else "$10,000"
+    base = (total_value - pnl) if (total_value and pnl is not None) else 10000
+    pct_s = f" ({'+' if (pnl or 0) >= 0 else ''}{(pnl / base * 100):.1f}%)" if (pnl and base) else ""
+    tone = "pos" if (pnl or 0) >= 0 else "neg"
+    pnl_s = (f'<b class="{tone}">{money(pnl)}{pct_s}</b>') if pnl is not None else "<b>$0.00</b>"
+    return (f'<div class="headline"><span class="hl-mood" '
+            f'style="color:{_regime_color(rlabel)}">{_esc(mood)} market</span>'
+            f' · paper portfolio <b>{_esc(val)}</b> · P&amp;L {pnl_s}'
+            f' · {_esc(n_pos)} holdings{_ibtn("regime")}</div>')
+
+
+def _equity_caption(snaps: list[dict]) -> str:
+    pts = [(s.get("total_value"), s.get("benchmark_value")) for s in (snaps or [])
+           if s.get("total_value")]
+    if len(pts) < 2:
+        return ""
+    v0, vN = float(pts[0][0]) or 1.0, float(pts[-1][0])
+    strat = (vN / v0 - 1.0) * 100.0
+    spy = ""
+    if pts[0][1] and pts[-1][1]:
+        s = (float(pts[-1][1]) / float(pts[0][1]) - 1.0) * 100.0
+        spy = f" vs SPY {'+' if s >= 0 else ''}{s:.1f}%"
+    sign = "+" if strat >= 0 else ""
+    return (f'<p class="muted cap">Strategy <b>{sign}{strat:.1f}%</b>{spy} '
+            f'over {len(pts)} snapshots (both indexed to 100 at start).</p>')
+
+
+def _zone(zid: str, emoji: str, title: str, inner: str) -> str:
+    """A titled, anchorable group of cards (feeds the in-page section nav).
+    Renders nothing when the zone has no content (avoids bare headers)."""
+    if not (inner or "").strip():
+        return ""
+    return (f'<section class="zone" id="{zid}">'
+            f'<h2 class="zone-h">{emoji} {_esc(title)}</h2>{inner}</section>')
 
 
 def _signal_lookup(sectors: dict) -> dict:
@@ -520,20 +561,20 @@ def dashboard_html(data: dict) -> str:
     pnl = ((snap.get("unrealized_pnl") or 0) + (snap.get("realized_pnl_ytd") or 0)
            if snap else None)
     dd = snap.get("drawdown_from_peak")
-    kpis = "".join([
+    n_pos = snap.get("n_positions", len(data.get("positions") or []))
+    kpis_primary = (
         _kpi("Portfolio", money(total_value) if total_value else "$10,000", "paper money",
-             key="paper_value"),
-        _kpi("Total P&L", money(pnl) if pnl is not None else "$0.00",
-             "realized + unrealized", tone="pos" if (pnl or 0) >= 0 else "neg",
-             key="total_pnl"),
+             key="paper_value", big=True)
+        + _kpi("Total P&L", money(pnl) if pnl is not None else "$0.00",
+               "realized + unrealized", tone="pos" if (pnl or 0) >= 0 else "neg",
+               key="total_pnl", big=True))
+    kpis_secondary = (
         _kpi("Drawdown", pct(dd) if dd is not None else "0.0%", "from peak",
-             tone="neg" if (dd or 0) < 0 else "", key="drawdown"),
-        _kpi("Positions", str(snap.get("n_positions", len(data.get("positions") or []))),
-             "open paper holdings", key="positions"),
-        _kpi("Cash", money(snap.get("cash")) if snap.get("cash") is not None else "$10,000",
-             "available", key="cash"),
-        _kpi("Picks", str(len(picks)), "top-overall this run", key="top_overall"),
-    ])
+             tone="neg" if (dd or 0) < 0 else "", key="drawdown")
+        + _kpi("Positions", str(n_pos), "open paper holdings", key="positions")
+        + _kpi("Cash", money(snap.get("cash")) if snap.get("cash") is not None else "$10,000",
+               "available", key="cash")
+        + _kpi("Picks", str(len(picks)), "top-overall this run", key="top_overall"))
 
     feed = "".join(f'<li>{_bold(d)}</li>' for d in decisions[:14])
     feed_html = (f'<ul class="feed">{feed}</ul>' if feed
@@ -599,6 +640,19 @@ def dashboard_html(data: dict) -> str:
   .kpi-val {{ font-size: var(--fs-kpi); font-weight: 680; margin-top: 4px; }}
   .kpi-sub {{ color: var(--muted2); font-size: var(--fs-1); margin-top: 2px; }}
   .kpi.pos .kpi-val {{ color: var(--pos); }} .kpi.neg .kpi-val {{ color: var(--neg); }}
+  .kpi.big .kpi-val {{ font-size: 30px; }}
+  .kpi-row1 {{ display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin-bottom: var(--sp-3); }}
+  .kpi-row2 {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-3); margin-bottom: var(--sp-5); }}
+  .headline {{ font-size: 17px; line-height: 1.5; margin: 2px 0 var(--sp-4);
+    padding: var(--sp-3) var(--sp-4); background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: var(--shadow); }}
+  .headline b {{ color: var(--text); }} .headline b.pos {{ color: var(--pos); }}
+  .headline b.neg {{ color: var(--neg); }} .hl-mood {{ font-weight: 650; }}
+  .cap {{ margin-top: var(--sp-2); }}
+  .zone {{ margin-bottom: var(--sp-5); scroll-margin-top: 12px; }}
+  .zone-h {{ font-size: var(--fs-2); text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted2); font-weight: 600; margin: 0 0 var(--sp-2); padding-left: 2px; }}
+  .hero {{ padding: var(--sp-4) 20px; }}
   .cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }}
   .card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
     padding: var(--sp-4) 20px; margin-bottom: var(--sp-4); box-shadow: var(--shadow); }}
@@ -621,7 +675,7 @@ def dashboard_html(data: dict) -> str:
   .pick-hd {{ display: flex; align-items: baseline; gap: var(--sp-2); }}
   .pick-sec {{ color: var(--muted); font-size: var(--fs-2); }}
   .coname {{ color: var(--muted); font-weight: 400; font-size: var(--fs-2); }}
-  .pick-score {{ margin-left: auto; font-variant-numeric: tabular-nums; color: var(--pos); font-weight: 640; }}
+  .pick-score {{ margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 640; }}
   .sigs {{ margin-top: 7px; display: grid; gap: 3px; }}
   .sigrow {{ display: grid; grid-template-columns: 90px 1fr 36px; align-items: center; gap: 8px; }}
   .siglbl {{ color: var(--muted2); font-size: var(--fs-1); }}
@@ -638,6 +692,7 @@ def dashboard_html(data: dict) -> str:
   footer {{ color: var(--muted2); font-size: var(--fs-2); margin-top: var(--sp-6);
     border-top: 1px solid var(--border-soft); padding-top: var(--sp-3); }}
   @media (max-width: 820px) {{ .grid {{ grid-template-columns: repeat(2, 1fr); }}
+    .kpi-row2 {{ grid-template-columns: repeat(2, 1fr); }}
     .cols {{ grid-template-columns: 1fr; }} }}
 
   /* ── educational layer ── */
@@ -729,27 +784,32 @@ def dashboard_html(data: dict) -> str:
   </div>
   {_nav()}
   {_run_banner(data.get("last_run") or {})}
-  <div class="grid">{kpis}</div>
+  {_headline(rlabel, total_value, pnl, n_pos)}
 
-  {_screener_stats(data.get("summary"))}
   {_card(_title("\U0001F4C8", "Equity curve — strategy vs the market", "equity_curve"),
-         _svg_equity(data.get("snapshots") or []))}
+         _svg_equity(data.get("snapshots") or []) + _equity_caption(data.get("snapshots") or []),
+         extra_cls="hero")}
 
-  <div class="cols">
-    {_picks_section(picks, sectors, names)}
-    {_card("\U0001F9E0 Recent decisions", feed_html)}
-  </div>
-  <div class="cols">
-    {_sector_table(sectors, names)}
-    {_vetoes_section(sectors, data.get("summary"))}
-  </div>
+  {_zone("money", "\U0001F4B0", "My money",
+         f'<div class="kpi-row1">{kpis_primary}</div>'
+         f'<div class="kpi-row2">{kpis_secondary}</div>'
+         + _positions_section(data.get("positions") or [], names))}
 
-  {_positions_section(data.get("positions") or [], names)}
-  {_sentiment_section(data.get("sentiment"), names)}
-  {_signal_lab_section(data.get("signal_lab") or {})}
-  {_tournament_section(data.get("tournament") or {})}
-  {_scorecard_section(data.get("scorecard"))}
-  {_copilot_section(data.get("copilot") or {})}
+  {_zone("today", "\U0001F4C5", "Today's read",
+         _screener_stats(data.get("summary"))
+         + f'<div class="cols">{_picks_section(picks, sectors, names)}'
+           f'{_card("\U0001F9E0 Recent decisions", feed_html)}</div>'
+         + f'<div class="cols">{_sector_table(sectors, names)}'
+           f'{_vetoes_section(sectors, data.get("summary"))}</div>')}
+
+  {_zone("working", "\U0001F9EA", "Is it working?",
+         _scorecard_section(data.get("scorecard"))
+         + _signal_lab_section(data.get("signal_lab") or {})
+         + _tournament_section(data.get("tournament") or {}))}
+
+  {_zone("hud", "\U0001F50E", "Under the hood",
+         _sentiment_section(data.get("sentiment"), names)
+         + _copilot_section(data.get("copilot") or {}))}
 
   <footer>Auto-generated by quant-tracker — do not edit; regenerated each run.
   Paper money, research only — not financial advice. Reloads every {_REFRESH_SECONDS // 60} min.</footer>

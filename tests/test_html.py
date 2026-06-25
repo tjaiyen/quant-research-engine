@@ -135,6 +135,20 @@ def test_educational_affordances_present():
     assert '"plain"' in out                              # glossary embedded for JS
 
 
+def test_hierarchy_headline_hero_zones():
+    out = html.dashboard_html(_sample())
+    assert 'class="headline"' in out                       # glance summary strip
+    assert "indexed to 100" in out                         # hero equity caption
+    assert all(f'id="{z}"' in out for z in ("money", "today", "working", "hud"))
+    assert "kpi-row1" in out and "kpi-row2" in out and "kpi big" in out  # 2-tier KPIs
+
+
+def test_empty_zones_drop_no_bare_headers():
+    out = html.dashboard_html({"as_of": "x"})              # no working/hud data
+    assert 'id="money"' in out                             # KPIs always present
+    assert 'id="working"' not in out and 'id="hud"' not in out
+
+
 def test_design_tokens_and_light_mode_present():
     out = html.dashboard_html(_sample())
     assert "--bg:" in out and "--pos:" in out and "--fs-kpi:" in out   # token system
