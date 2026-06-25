@@ -264,6 +264,18 @@ def test_signal_bar_keys_are_all_defined():
         assert glossary.has(sig), f"signal bar '{sig}' has no glossary entry"
 
 
+def test_positions_show_per_ticker_pnl_computed():
+    # market_value / unrealized_pnl aren't stored columns — must be computed
+    # per ticker (dollar + %), colored, gainers first.
+    pos = [{"ticker": "AAPL", "shares": 1.34, "cost_basis": 295.95, "current_price": 274.73},
+           {"ticker": "JNJ", "shares": 2.135, "cost_basis": 234.2, "current_price": 244.48}]
+    out = html._positions_section(pos)
+    assert "P&amp;L $" in out and "P&amp;L %" in out      # both columns, escaped once
+    assert "class='neg'" in out and "class='pos'" in out  # AAPL down, JNJ up
+    assert out.index("JNJ") < out.index("AAPL")           # biggest gainer first
+    assert "$367.94" in out or "$368" in out.replace(",", "")  # computed market value
+
+
 def test_company_names_render_next_to_tickers():
     d = _sample()
     d["positions"] = [{"ticker": "JNJ", "shares": 3, "cost_basis": 150,

@@ -395,21 +395,38 @@ def _positions_section(positions: list[dict], names: dict | None = None) -> str:
         inner = ('<div class="empty">No open positions yet — the first paper buys '
                  'land in the monthly 1st–5th window.</div>')
         return _card(_title("\U0001F4BC", "Positions", "positions"), inner)
-    rows = []
+    # Compute per-ticker value + P&L on the fly (these aren't stored columns) so
+    # each holding shows its own gain/loss in $ and %. Biggest movers first.
+    computed = []
     for p in positions:
+        sh = p.get("shares", p.get("quantity")) or 0.0
+        cost = p.get("avg_cost", p.get("cost_basis", p.get("entry_price"))) or 0.0
+        price = p.get("current_price")
+        mv = p.get("market_value")
+        if mv is None and price is not None:
+            mv = float(sh) * float(price)
         upnl = p.get("unrealized_pnl")
-        tone = "pos" if (upnl or 0) >= 0 else "neg"
+        if upnl is None and price is not None:
+            upnl = (float(price) - float(cost)) * float(sh)
+        basis = float(cost) * float(sh)
+        pct_chg = (upnl / basis) if (upnl is not None and basis) else None
+        computed.append((p, sh, cost, price, mv, upnl, pct_chg))
+    computed.sort(key=lambda t: (t[5] is None, -(t[5] or 0)))   # gainers → losers
+    rows = []
+    for p, sh, cost, price, mv, upnl, pct_chg in computed:
+        tone = "" if upnl is None else ("pos" if upnl >= 0 else "neg")
         rows.append(
             f"<tr><td>{_ticker(p.get('ticker'), names)}</td>"
-            f"<td>{num(p.get('shares', p.get('quantity')), 2)}</td>"
-            f"<td>{money(p.get('avg_cost', p.get('cost_basis', p.get('entry_price'))))}</td>"
-            f"<td>{money(p.get('current_price'))}</td>"
-            f"<td>{money(p.get('market_value'))}</td>"
-            f"<td class='{tone}'>{money(upnl) if upnl is not None else '—'}</td></tr>")
+            f"<td>{num(sh, 2)}</td>"
+            f"<td>{money(cost)}</td>"
+            f"<td>{money(price)}</td>"
+            f"<td>{money(mv) if mv is not None else '—'}</td>"
+            f"<td class='{tone}'>{money(upnl) if upnl is not None else '—'}</td>"
+            f"<td class='{tone}'>{pct(pct_chg) if pct_chg is not None else '—'}</td></tr>")
     body = (f'<table class="tbl"><thead><tr><th>Ticker</th>{_th("shares", "Shares")}'
             f'{_th("cost_basis", "Cost")}<th>Price</th>{_th("market_value", "Value")}'
-            f'{_th("unrealized_pnl", "Unreal. P&amp;L")}</tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody></table>')
+            f'{_th("unrealized_pnl", "P&L $")}{_th("unrealized_pnl", "P&L %")}'
+            f'</tr></thead><tbody>{"".join(rows)}</tbody></table>')
     return _card(_title("\U0001F4BC", "Positions", "positions"), body)
 
 
