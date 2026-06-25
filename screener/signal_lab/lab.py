@@ -8,9 +8,27 @@ from __future__ import annotations
 from collections import defaultdict
 
 import numpy as np
+from scipy.stats import norm
 
 from screener.backtest.signal_ic import _spearman
 from screener.tournament.variants import SIGNALS
+
+
+def _bonferroni_threshold(n_tests: int, alpha: float = 0.05) -> float:
+    """Two-tailed |IR| critical value, Bonferroni-corrected across n_tests.
+
+    The IC info-ratio (ic_mean/ic_std·√n) is ~a t-stat for "IC ≠ 0". Testing 5
+    signals at once inflates the false-positive rate, so we require each to clear
+    the α/n_tests threshold before calling its IC significant (U28; Harvey-Liu
+    "Lucky Factors"). Normal approximation — conservative enough at this N.
+    """
+    return float(norm.ppf(1.0 - alpha / (2.0 * max(1, n_tests))))
+
+
+def _ic_significant(ir: float | None, threshold: float) -> bool | None:
+    if ir is None:
+        return None
+    return abs(ir) >= threshold
 
 
 def _rows_by_date(panel: dict) -> dict:
@@ -67,8 +85,9 @@ def analyze_signals(panel: dict) -> dict:
     for d, reg in regime_of.items():
         dates_by_regime[reg].append(d)
 
+    sig_threshold = _bonferroni_threshold(len(SIGNALS))
     out: dict = {"n_dates": len(rbd), "n_rows": len(panel.get("rows", [])),
-                 "signals": {}}
+                 "ir_threshold": sig_threshold, "signals": {}}
     for sig in SIGNALS:
         ics = _ic_series(rbd, sig)
         ic_mean = float(np.mean(ics)) if ics else None
@@ -82,6 +101,7 @@ def analyze_signals(panel: dict) -> dict:
             by_regime[reg] = float(np.mean(ri)) if ri else None
         out["signals"][sig] = {
             "ic": ic_mean, "ic_ir": ir, "n_dates": len(ics),
+            "ic_significant": _ic_significant(ir, sig_threshold),
             "quintile_spread": _quintile_spread(rbd, sig),
             "by_regime": by_regime, "verdict": _verdict(ic_mean),
         }

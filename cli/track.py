@@ -357,12 +357,15 @@ def cmd_tournament(args: argparse.Namespace) -> int:
     if len(panel.get("rows", [])) < 1:
         print("Not enough cached history to build the panel — run `track seed` first.")
         return 1
+    from screener.config import TOURNAMENT_COST_BPS
+    cost_bps = args.costs_bps if args.costs_bps is not None else TOURNAMENT_COST_BPS
     print(f"Panel: {len(panel['rows'])} rows over {len(panel['segments'])} rebalances. "
-          f"Running {len(default_variants())} variants…")
-    tour = run_tournament(panel, default_variants())
+          f"Running {len(default_variants())} variants (net of {cost_bps:.0f}bps)…")
+    tour = run_tournament(panel, default_variants(), cost_bps=cost_bps)
     attr = attribute(tour, panel)
     data = {"as_of": datetime.now(timezone.utc).isoformat(),
             "n_segments": tour["n_segments"], "n_in_sample": tour["n_in_sample"],
+            "cost_bps": cost_bps,
             "ranked": tour["ranked"], "attribution": attr,
             "years": args.years, "rebalance": args.rebalance}
     atomic_write(tracker_dir() / "Tournament.md", notes.tournament_note(data))
@@ -599,6 +602,8 @@ def build_parser() -> argparse.ArgumentParser:
     tn.add_argument("--rebalance", choices=["month", "quarter"], default="quarter")
     tn.add_argument("--max-per-sector", type=int, default=10, dest="max_per_sector")
     tn.add_argument("--rebuild", action="store_true", help="ignore the cached panel")
+    tn.add_argument("--costs-bps", type=float, default=None, dest="costs_bps",
+                    help="round-trip transaction cost in bps (default: config 20)")
     tn.set_defaults(func=cmd_tournament)
 
     sm = sub.add_parser("sim", help="strategy portfolio backtest (StrategyBacktest.md; ~10-15 min)")

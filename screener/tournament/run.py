@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from screener.backtest.portfolio_backtest import _cagr, _max_drawdown, _sharpe
+from screener.rigor.costs import cost_haircut
 
 _STEP = {"month": 30, "quarter": 91}
 
@@ -97,7 +98,8 @@ def _metrics(seg_rets: list[float], spy_rets: list[float], ppy: float) -> dict:
     }
 
 
-def run_tournament(panel: dict, variants: list[dict], oos_frac: float = 0.34) -> dict:
+def run_tournament(panel: dict, variants: list[dict], oos_frac: float = 0.34,
+                   cost_bps: float = 0.0) -> dict:
     segs = panel.get("segments", [])
     rows_by_date: dict = defaultdict(list)
     for r in panel.get("rows", []):
@@ -110,8 +112,14 @@ def run_tournament(panel: dict, variants: list[dict], oos_frac: float = 0.34) ->
     results = []
     for spec in variants:
         seg_rets, holds = [], []
+        prev_held: list[str] = []
         for seg in segs:
             ret, held = _segment(seg, rows_by_date.get(seg["d0"], []), spec)
+            # U27 transaction-cost stress: haircut the gross return by
+            # turnover × round-trip bps. Uniform across variants — the
+            # leaderboard + the candidate A/B become net-of-cost.
+            ret -= cost_haircut(prev_held, held, cost_bps)
+            prev_held = held
             seg_rets.append(ret); holds.append(held)
         results.append({
             "label": spec["label"], "group": spec["group"], "spec": spec,
@@ -133,7 +141,7 @@ def run_tournament(panel: dict, variants: list[dict], oos_frac: float = 0.34) ->
     for i, r in enumerate(ranked):
         r["rank"] = i + 1
     return {"n_segments": len(segs), "n_in_sample": n_is, "ppy": ppy,
-            "ranked": ranked, "results": results}
+            "cost_bps": cost_bps, "ranked": ranked, "results": results}
 
 
 def _equity_curve(segs: list[dict], seg_rets: list[float]) -> list[dict]:

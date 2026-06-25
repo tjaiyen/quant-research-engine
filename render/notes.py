@@ -505,13 +505,23 @@ def signal_lab_note(data: dict) -> str:
     rows = []
     for s, d in sorted(sigs.items(), key=lambda kv: -(kv[1].get("ic") or -9)):
         ic = d.get("ic")
+        sig_flag = d.get("ic_significant")
+        sig_mark = "—" if sig_flag is None else ("✓" if sig_flag else "✗")
         rows.append([
             s, pct(ic) if ic is not None else "—",
             num(d.get("ic_ir"), 1) if d.get("ic_ir") is not None else "—",
+            sig_mark,
             pct(d.get("quintile_spread")) if d.get("quintile_spread") is not None else "—",
             d.get("verdict", ""),
         ])
-    ic_tbl = table(["Signal", "IC", "Info ratio", "Quintile spread", "Verdict"], rows)
+    _thr = data.get("ir_threshold")
+    ic_tbl = table(["Signal", "IC", "Info ratio",
+                    "Sig.", "Quintile spread", "Verdict"], rows)
+    if _thr is not None:
+        ic_tbl += (f"\n\n_Sig. = info ratio clears the Bonferroni-corrected "
+                   f"|IR|≥{_thr:.2f} bar (α=0.05 across {len(sigs)} signals). A ✗ "
+                   f"means the IC is **not** significant after the multiple-testing "
+                   f"correction — suggestive, not proven (U28)._")
 
     cand = data.get("candidate_weights", {}) or {}
     kept = ", ".join(f"{k} {pct(v)}" for k, v in cand.items() if v and v > 0.001)
@@ -630,7 +640,10 @@ def tournament_note(data: dict) -> str:
         f"**{attr.get('oos_rank','—')}/{len(ranked)}** · field spread "
         f"{pct(attr.get('field_spread'))}\n\n"
         f"## Leaderboard ({data.get('n_segments','?')} rebalances, "
-        f"{data.get('n_in_sample','?')} in-sample)\n\n{board}\n\n"
+        f"{data.get('n_in_sample','?')} in-sample"
+        + (f", net of {data['cost_bps']:.0f}bps round-trip cost"
+           if data.get("cost_bps") else "")
+        + f")\n\n{board}\n\n"
         f"## Why the winner won\n\n"
         f"**Which signals actually predicted returns** (Spearman IC over the window):\n\n{ic_tbl}\n\n"
         + (f"## The default strategy vs market direction\n\n"

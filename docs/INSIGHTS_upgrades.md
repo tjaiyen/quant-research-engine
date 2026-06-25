@@ -183,6 +183,55 @@ plugins an auto-generation pipeline can't drive; Dataview (already used well) mo
 
 ---
 
+## Theme H — Validation rigor (mined 2026-06-24 from an institutional quant brief + handoff)
+
+**Provenance & honest scope.** TJ supplied an institutional quant research brief +
+a stress-test/upgrade handoff written for a *different, institutional* desk.
+**~90% is out of scope** for a personal, paper-only, daily-data Obsidian screener
+(see U30). But a **validation-rigor cluster** maps exactly onto the tournament +
+signal-lab and **directly re-tests the live ARIMA+Sharpe edge** (`WEIGHT_MATRIX_MODE
+=candidate`). Implemented in `screener/rigor/` (costs.py, stats.py, cpcv.py) +
+`signal_lab.lab`. All reuse the cached panel (cheap); nothing institutional built.
+
+### U25 — Combinatorial Purged Cross-Validation ✅ IMPLEMENTED
+- **Source:** De Prado *Advances in Financial ML*; skfolio's `CombinatorialPurgedCV`; Arian et al. 2024 (CPCV dominates walk-forward for overfit detection).
+- **Maps to:** `screener/rigor/cpcv.py` — replaces the tournament's single in-sample→OOS split with every k-of-n held-out group (purged + embargoed), yielding a *distribution* of OOS excess-vs-SPY rather than one number.
+- **Rec: ADOPT (S).** Implemented directly over the ~10 rebalance segments (no heavy dep). **Result on the live candidate:** 15 folds, mean excess **+3.8%**, std **6.9%**, **73%** of folds positive — positive but wide (small-sample noise).
+
+### U26 — Deflated Sharpe Ratio / probability of backtest overfit ✅ IMPLEMENTED
+- **Source:** Bailey & López de Prado, "The Deflated Sharpe Ratio" (2014) + "The Probability of Backtest Overfitting" (2015).
+- **Maps to:** `screener/rigor/stats.py:deflated_sharpe` — discounts the tournament winner's Sharpe by the expected-max Sharpe of N noise trials (closed form), then returns P(true SR>0). The honest-stats fix for the exact multiple-comparisons caveat the tournament always flagged.
+- **Rec: ADOPT (S).** **Result on the live candidate:** observed per-period SR **1.25** vs expected-max-under-null **0.55** (20 trials) → **DSR = 0.989**. The *portfolio-level* edge survives the multiple-comparison correction.
+
+### U27 — Transaction-cost stress ✅ IMPLEMENTED
+- **Source:** the brief's "Why Your Backtest Lies" — >12pp cost drag across 64 scenarios in the institutional case.
+- **Maps to:** `screener/rigor/costs.py:cost_haircut` (turnover × round-trip bps) wired into `tournament/run` uniformly; `TOURNAMENT_COST_BPS=20` config + `track tournament --costs-bps`. Leaderboard + candidate A/B are now **net of cost**.
+- **Rec: ADOPT (S).** **Result:** turnover on quarterly top-2-per-sector is **low**, so even at 40bps the candidate only drops 73.0%→69.8% (default 38.9%→36.2%). The edge is **not** cost-fragile — contradicted my pre-registered prediction that it would be (B35: the contradiction is the finding — the candidate is low-churn). Parametric haircut, **not** a microstructure/LOB sim (that's the declined institutional path).
+
+### U28 — Multiple-testing-corrected signal significance ✅ IMPLEMENTED
+- **Source:** Feng-Giglio-Xiu / Harvey-Liu "Lucky Factors"; the handoff's alpha-additivity t-stat≥2 gate.
+- **Maps to:** `screener/signal_lab/lab.py` — each signal's IC info-ratio is checked against a **Bonferroni-corrected |IR|≥2.576** bar (α=0.05 across 5 signals); rendered as a Sig. ✓/✗ column.
+- **Rec: ADOPT (S).** **Result (important honesty caveat):** **NO signal clears the corrected bar** — ARIMA IR **+2.13** (< 2.576), Monte-Carlo −2.35, the rest smaller. The portfolio edge survives DSR (a return-distribution test), but the **underlying ARIMA signal is only *suggestive*, not significant** at the single-signal multiple-testing bar. With 10 quarterly obs, forward paper data is the real arbiter.
+
+### U29 — LLM formulaic-alpha-as-FEATURE — ADOPT, DEFERRED
+- **Source:** arXiv 2508.04975 — an LLM writes formulaic alphas used as features, IC-gated + sandboxed.
+- **Maps to:** the existing Claude co-pilot (`screener/copilot/`) → it proposes candidate signal *formulas*; the signal-lab IC-gates them before any inclusion. The real "new signals" door (the honest exit of Phase 14: re-weighting 5 weak signals can't manufacture edge).
+- **Rec: ADOPT but DEFER.** Bigger build; the natural follow-on, not this phase. Sandbox discipline (no `eval` on LLM output without guards) per `.claude/rules/ai-ml.md`.
+
+### U30 — Institutional declines (recorded with reasons)
+- **DECLINE (out of scale/data for a personal paper tool on daily bars):** limit-order-book modeling (DeepLOB/TLOB), kdb+/KDB-X tick stores, RL/ABIDES execution, deep hedging (pfhedge), C++/Rust latency, $75K/mo market data, satellite/credit-card alt-data, SR 26-2 model-risk-management governance, TFT/time-series foundation models.
+- **Already implemented (the brief validated these):** point-in-time / look-ahead discipline (causal panel slicing) and the regime-HMM are exactly what the brief prescribes at the small-tool tier.
+
+> **Re-validation verdict (Deliverable 3 — the payoff):** the live ARIMA+Sharpe
+> candidate **survives the rigor cluster — keep it live, at moderate confidence.**
+> ✓ costs (low turnover), ✓ DSR 0.989, ✓ CPCV 73% folds positive, ✓ beats the
+> random control OOS — **but only by +0.8pp** (random itself beat SPY this window),
+> the default's OOS Sharpe (4.27) actually exceeds the candidate's (3.47), and the
+> ARIMA signal is **not** significant after Bonferroni (U28). Net: real enough to
+> keep, thin enough that forward paper data is the true test. **No silent revert.**
+
+---
+
 ## Theme E — Explicit DECLINES (with why)
 
 - **LSTM / TensorFlow price prediction** (tensorflow) — DECLINE (L). Overfits small free-data, seed-unstable, dominated by a naïve "tomorrow≈today" baseline, lookahead-prone. ARIMA/GARCH/Kalman already cover the linear-Gaussian job.

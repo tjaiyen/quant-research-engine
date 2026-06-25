@@ -101,6 +101,12 @@ WEIGHT_MATRIX_CANDIDATE: dict[str, dict[str, float]] = {
 # WEIGHT_MATRIX_MODE env var.
 WEIGHT_MATRIX_MODE: str = "candidate"
 
+# Round-trip transaction cost (bps) applied as a turnover haircut in the
+# tournament/rigor sims (U27). ~20bps ≈ commission + half-spread + slippage for a
+# liquid large-cap, both legs. The frictionless sim overstates high-churn
+# variants; this nets them out uniformly. Overridable via `--costs-bps`.
+TOURNAMENT_COST_BPS: float = 20.0
+
 # ── Regime-Adjusted Veto Thresholds ──────────────────────────────────────────
 VETO_THRESHOLDS: dict[str, dict[str, float]] = {
     "bull":     {"garch_vol": 0.045, "mc_loss_prob": 0.30},
