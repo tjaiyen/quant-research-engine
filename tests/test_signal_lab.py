@@ -59,7 +59,8 @@ def test_note_renders():
 def test_weight_matrix_mode_flag(monkeypatch):
     from screener.regime.weight_matrix import get_blended_weights
     probs = {"bull": 1.0, "sideways": 0.0, "bear": 0.0}
-    base = get_blended_weights(probs)                  # current (live default)
+    monkeypatch.setenv("WEIGHT_MATRIX_MODE", "current")   # explicit, default-independent
+    base = get_blended_weights(probs)
     monkeypatch.setenv("WEIGHT_MATRIX_MODE", "candidate")
     cand = get_blended_weights(probs)
     assert cand["monte_carlo"] == 0.0 and cand["arima"] > 0.5

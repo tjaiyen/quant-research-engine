@@ -310,10 +310,12 @@ def cmd_signal_lab(args: argparse.Namespace) -> int:
            "default_oos": _oos(_strat("d", "weighting", weights=None)),
            "spy_oos": spy - 1.0, "n_oos": n - n_is}
 
+    from screener.config import WEIGHT_MATRIX_MODE
     data = {"as_of": datetime.now(timezone.utc).isoformat(),
             "n_dates": analysis["n_dates"], "n_rows": analysis["n_rows"],
             "signals": analysis["signals"], "correlation": analysis["correlation"],
-            "candidate_weights": recommend_weights(analysis), "validation": val}
+            "candidate_weights": recommend_weights(analysis), "validation": val,
+            "mode": os.getenv("WEIGHT_MATRIX_MODE", WEIGHT_MATRIX_MODE)}
     atomic_write(tracker_dir() / "SignalLab.md", notes.signal_lab_note(data))
     try:
         sc = REPO_ROOT / "store" / "last_signal_lab.json"

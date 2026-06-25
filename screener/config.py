@@ -93,10 +93,13 @@ _CAND = {"arima": 0.62, "kalman": 0.0, "garch": 0.0, "monte_carlo": 0.0, "sharpe
 WEIGHT_MATRIX_CANDIDATE: dict[str, dict[str, float]] = {
     "bull": dict(_CAND), "bear": dict(_CAND), "sideways": dict(_CAND),
 }
-# "current" (default, live behavior) | "candidate" (the ARIMA+Sharpe vector).
-# Overridable per-process via the WEIGHT_MATRIX_MODE env var (for A/B without
-# changing the live default).
-WEIGHT_MATRIX_MODE: str = "current"
+# "current" (the original matrix) | "candidate" (the ARIMA+Sharpe vector).
+# ADOPTED 2026-06-24: the candidate beat the original AND buy-and-hold SPY
+# out-of-sample (+17.8% vs +12.0%) with a stable, IC-validated signal selection.
+# This is PAPER-only, so running it live IS the forward validation; revert to
+# "current" if the forward (post-July) evidence doesn't hold. Overridable via the
+# WEIGHT_MATRIX_MODE env var.
+WEIGHT_MATRIX_MODE: str = "candidate"
 
 # ── Regime-Adjusted Veto Thresholds ──────────────────────────────────────────
 VETO_THRESHOLDS: dict[str, dict[str, float]] = {

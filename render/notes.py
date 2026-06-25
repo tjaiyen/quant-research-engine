@@ -546,11 +546,16 @@ def signal_lab_note(data: dict) -> str:
         + (f"## Candidate re-weighting (drop the duds)\n\n"
            f"Keep **{kept}**, drop the rest. **Out-of-sample** (weights derived from in-sample "
            f"dates only, judged on held-out dates):\n\n{val_tbl}\n\n" if val_tbl else "")
+        + ("_**Live now:** the candidate weighting is the active default "
+           "(`WEIGHT_MATRIX_MODE=candidate`) — running it in paper IS the forward validation; "
+           "revert to `current` if the post-July evidence doesn't hold._\n\n"
+           if data.get("mode") == "candidate" else
+           "_The live weights are unchanged; the candidate is opt-in via `WEIGHT_MATRIX_MODE`._\n\n")
         + "_Honest caveats: one ~3-year price path, few out-of-sample quarters — the IC "
         "diagnosis is robust (consistent across windows) but the OOS edge needs forward "
-        "paper-validation before trusting it. The live weights are unchanged; this is opt-in "
-        "via `WEIGHT_MATRIX_MODE`. Re-weighting only redistributes among 5 signals — if they're "
-        "weak, the real fix is new signals (momentum / quality / value)._\n"
+        "paper-validation before trusting it with conviction. Re-weighting only redistributes "
+        "among 5 signals — if they're weak, the real fix is new signals (momentum / quality / "
+        "value)._\n"
     )
     return document(fm, body)
 
