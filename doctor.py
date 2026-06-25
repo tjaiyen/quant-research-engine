@@ -50,12 +50,11 @@ FS_TYPE_MARKERS = [
     "nfs", "afpfs", "webdav", "ftp", "davfs", "9p", "vboxsf", "drvfs",
 ]
 
-# The one true vault mount. The " 2" is load-bearing — see module docstring.
-CANONICAL_VAULT = (
-    "/Users/user/Library/CloudStorage/"
-    "GoogleDrive-user@example.com/My Drive 2/"
-    "02_Knowledge/Obsidian/TJ_Vault/Investment_AI"
-)
+# Neutral default vault location. Set VAULT_PATH (see .env.example) to point at
+# your own Obsidian vault — typically a cloud-synced mount (Google Drive /
+# iCloud / Dropbox). The volatile 'My Drive' <-> 'My Drive 2' suffix some sync
+# clients flip is self-healed by _heal_drive_suffix; never hardcode the suffix.
+DEFAULT_VAULT = str(Path.home() / "Obsidian" / "Investment_AI")
 
 
 def _real(p: str | Path) -> Path:
@@ -193,7 +192,7 @@ def resolve_vault_dir() -> Path:
     Self-heals the volatile Drive suffix so a 'My Drive' <-> 'My Drive 2' flip
     (which Drive does on its own) doesn't break the gate or the renderer.
     """
-    return _heal_drive_suffix(_real(os.getenv("VAULT_PATH", CANONICAL_VAULT)))
+    return _heal_drive_suffix(_real(os.getenv("VAULT_PATH", DEFAULT_VAULT)))
 
 
 def run() -> dict:

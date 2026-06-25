@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
+  NOTE: replace every "/path/to/quant-tracker" below with this repo's absolute
+  path on your machine (launchd requires absolute paths, no ~ expansion).
   Daily quant-tracker run (Mon-Fri 13:30 PT, after the 1pm PT / 4pm ET close):
   paper monitor → report. Install:
     cp deploy/com.tj.quant-tracker.daily.plist ~/Library/LaunchAgents/
@@ -15,7 +17,7 @@
     <string>com.tj.quant-tracker.daily</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/user/dev/quant-tracker/bin/scheduled-run.sh</string>
+        <string>/path/to/quant-tracker/bin/scheduled-run.sh</string>
         <string>daily</string>
     </array>
     <!-- An array of intervals = Mon(1) through Fri(5) at 13:30. -->
@@ -30,8 +32,8 @@
     <key>RunAtLoad</key>
     <false/>
     <key>StandardOutPath</key>
-    <string>/Users/user/dev/quant-tracker/logs/launchd.daily.out.log</string>
+    <string>/path/to/quant-tracker/logs/launchd.daily.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/user/dev/quant-tracker/logs/launchd.daily.err.log</string>
+    <string>/path/to/quant-tracker/logs/launchd.daily.err.log</string>
 </dict>
 </plist>

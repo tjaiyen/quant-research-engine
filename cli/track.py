@@ -689,6 +689,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     os.chdir(REPO_ROOT)  # engine modules use paths relative to the repo root
+    import utils.config  # noqa: F401 — load .env once (VAULT_PATH, ANTHROPIC_API_KEY, …)
     args = build_parser().parse_args(argv)
     return args.func(args)
 

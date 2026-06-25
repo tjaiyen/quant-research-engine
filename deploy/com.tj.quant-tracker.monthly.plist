@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
+  NOTE: replace every "/path/to/quant-tracker" below with this repo's absolute
+  path on your machine (launchd requires absolute paths, no ~ expansion).
   Monthly quant-tracker run — fires 06:00 PT on days 1-5, runs:
     screen (fresh picks) -> paper cycle -> paper monitor -> report.
   Why 06:00 PT on days 1-5 (not 07:00 on day 1):
@@ -23,7 +25,7 @@
     <string>com.tj.quant-tracker.monthly</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/user/dev/quant-tracker/bin/scheduled-run.sh</string>
+        <string>/path/to/quant-tracker/bin/scheduled-run.sh</string>
         <string>monthly</string>
     </array>
     <!-- Days 1-5 at 06:00 PT (before the 6:25-6:28 PT MOO window); the cycle
@@ -39,8 +41,8 @@
     <key>RunAtLoad</key>
     <false/>
     <key>StandardOutPath</key>
-    <string>/Users/user/dev/quant-tracker/logs/launchd.monthly.out.log</string>
+    <string>/path/to/quant-tracker/logs/launchd.monthly.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/user/dev/quant-tracker/logs/launchd.monthly.err.log</string>
+    <string>/path/to/quant-tracker/logs/launchd.monthly.err.log</string>
 </dict>
 </plist>

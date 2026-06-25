@@ -13,7 +13,9 @@
 # so the launchd log reflects reality. Logs to logs/sched-<job>-<ts>.log.
 set -uo pipefail
 
-ROOT="/Users/user/dev/quant-tracker"
+# Repo root, derived from this script's location (bin/scheduled-run.sh) so the
+# job works on any machine without editing a hardcoded path.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="$ROOT/.venv/bin/python"
 JOB="${1:-}"
 LOG_DIR="$ROOT/logs"

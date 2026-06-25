@@ -21,13 +21,11 @@ TRACKER_SUBDIR = "90 Tracker"
 
 # ── Vault path resolution ────────────────────────────────────────────────────
 
-# Mirrors doctor.CANONICAL_VAULT — kept here so render/ has no import cycle with
-# doctor.py (which lives at repo root, not on the package path under all runs).
-_CANONICAL_VAULT = (
-    "/Users/user/Library/CloudStorage/"
-    "GoogleDrive-user@example.com/My Drive 2/"
-    "02_Knowledge/Obsidian/TJ_Vault/Investment_AI"
-)
+# Neutral default — point the renderer at your own Obsidian vault by setting the
+# VAULT_PATH env var (see .env.example). Mirrors doctor.DEFAULT_VAULT; kept here so
+# render/ has no import cycle with doctor.py (which lives at repo root, not on the
+# package path under all runs).
+_CANONICAL_VAULT = str(Path.home() / "Obsidian" / "Investment_AI")
 
 
 def _heal_drive_suffix(p: Path) -> Path:
