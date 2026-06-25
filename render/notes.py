@@ -701,6 +701,52 @@ def copilot_note(review: dict, context: dict | None = None) -> str:
 
 # ── News sentiment (U11) ─────────────────────────────────────────────────────
 
+_HEALTH_EMOJI = {"STRONG": "🟢", "FAIR": "🟡", "WEAK": "🔴", "UNAVAILABLE": "⚪"}
+
+
+def company_health_note(data: dict) -> str:
+    """Per-company health snapshot: quality grade + valuation + next earnings.
+    `data['rows']` are pre-joined dicts (health + fundamentals + earnings)."""
+    rows = data.get("rows", []) or []
+    fm = {"title": "CompanyHealth", "type": "tracker-company-health",
+          "as_of": data.get("as_of"), "n_companies": len(rows)}
+    if not rows:
+        return document(fm, "# 🩺 Company health\n\n_No health data yet — "
+                        "`track health` (scores your holdings' fundamentals)._\n")
+
+    def _row(r):
+        lbl = r.get("health_label") or "UNAVAILABLE"
+        return [
+            f"{_HEALTH_EMOJI.get(lbl, '⚪')} **{r.get('ticker')}**"
+            + (f" · {r.get('name')}" if r.get("name") else ""),
+            lbl + (f" ({r['floors_passed']}/{r['floors_total']})"
+                   if r.get("floors_total") else ""),
+            pct(r.get("roe")) if r.get("roe") is not None else "—",
+            pct(r.get("operating_margin")) if r.get("operating_margin") is not None else "—",
+            num(r.get("debt_to_equity"), 2) if r.get("debt_to_equity") is not None else "—",
+            num(r.get("pe"), 1) if r.get("pe") is not None else "—",
+            r.get("next_earnings") or "—",
+        ]
+
+    tbl = table(["Company", "Health", "ROE", "Op margin", "Debt/Eq", "P/E", "Next earnings"],
+                [_row(r) for r in rows])
+    strong = sum(1 for r in rows if r.get("health_label") == "STRONG")
+    weak = sum(1 for r in rows if r.get("health_label") == "WEAK")
+    body = (
+        "# 🩺 Company health — is each holding financially sound?\n\n"
+        f"> [!{'success' if weak == 0 else 'warning'}] At a glance\n"
+        f"> Of {len(rows)} companies, **{strong} strong** · **{weak} weak** on the "
+        f"quality floors (ROE, margins, leverage, liquidity for their sector).\n\n"
+        "_Health grades each company's profitability + balance-sheet metrics against "
+        "the minimum floors for its sector (🟢 STRONG ≥¾ passed · 🟡 FAIR · 🔴 WEAK · "
+        "⚪ data n/a). Valuation is the trailing P/E; **Next earnings** is the upcoming "
+        "report date. Fundamentals are point-in-time snapshots from a free feed — a "
+        "monitoring aid, not investment advice._\n\n"
+        f"{tbl}\n"
+    )
+    return document(fm, body)
+
+
 def sentiment_note(data: dict) -> str:
     rows = data.get("rows", []) or []
     counts = {"POSITIVE": 0, "NEUTRAL": 0, "NEGATIVE": 0, "UNAVAILABLE": 0}

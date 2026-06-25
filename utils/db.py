@@ -257,6 +257,52 @@ def list_sentiment() -> list[dict]:
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
+# ---------- Company health (Phase 21) ----------
+_HEALTH_COLS = ("roe", "operating_margin", "profit_margin", "debt_to_equity",
+                "current_ratio", "eps_ttm", "health_score", "health_label",
+                "floors_passed", "floors_total")
+
+
+def upsert_health(ticker: str, snap: dict) -> None:
+    """Store a ticker's health snapshot (idempotent). `snap` keys = _HEALTH_COLS."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO company_health(ticker, roe, operating_margin, profit_margin, "
+            "debt_to_equity, current_ratio, eps_ttm, health_score, health_label, "
+            "floors_passed, floors_total, updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?, datetime('now')) "
+            "ON CONFLICT(ticker) DO UPDATE SET "
+            "roe=excluded.roe, operating_margin=excluded.operating_margin, "
+            "profit_margin=excluded.profit_margin, debt_to_equity=excluded.debt_to_equity, "
+            "current_ratio=excluded.current_ratio, eps_ttm=excluded.eps_ttm, "
+            "health_score=excluded.health_score, health_label=excluded.health_label, "
+            "floors_passed=excluded.floors_passed, floors_total=excluded.floors_total, "
+            "updated_at=datetime('now')",
+            (ticker.upper(), *(snap.get(c) for c in _HEALTH_COLS)),
+        )
+
+
+def fetch_health(ticker: str) -> dict | None:
+    """Return a ticker's cached health row as a dict, or None."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            f"SELECT {', '.join(_HEALTH_COLS)}, updated_at FROM company_health "
+            "WHERE ticker = ?", (ticker.upper(),))
+        row = cur.fetchone()
+        cols = [c[0] for c in cur.description]
+    return dict(zip(cols, row)) if row else None
+
+
+def list_health() -> list[dict]:
+    """All cached company-health rows (weakest first)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            f"SELECT ticker, {', '.join(_HEALTH_COLS)}, updated_at FROM company_health "
+            "ORDER BY health_score ASC")
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
 # ---------- Ticker status (Upgrade U9) ----------
 
 def ticker_status(ticker: str) -> tuple[str | None, str | None]:

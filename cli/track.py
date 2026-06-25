@@ -259,6 +259,38 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_health(args: argparse.Namespace) -> int:
+    _preflight()
+    from datetime import datetime, timezone
+
+    from render import notes
+    from render.markdown import atomic_write, tracker_dir
+    from tasks import refresh_health
+    from utils.db import (fetch_earnings, fetch_latest_fundamentals, list_health,
+                          ticker_names)
+
+    extra: list[str] = list(args.tickers or [])
+    if args.universe:
+        extra.append("--universe")
+    if args.limit:
+        extra += ["--limit", str(args.limit)]
+    refresh_health.main(extra)
+
+    names = ticker_names()
+    rows = []
+    for h in list_health():
+        t = h["ticker"]
+        fund = fetch_latest_fundamentals(t) or {}
+        rows.append({**h, "name": names.get(t), "pe": fund.get("pe"),
+                     "peg": fund.get("peg"), "div_yield": fund.get("div_yield"),
+                     "next_earnings": fetch_earnings(t)})
+    data = {"as_of": datetime.now(timezone.utc).isoformat(), "rows": rows}
+    atomic_write(tracker_dir() / "CompanyHealth.md", notes.company_health_note(data))
+    print(f"Company-health note written → {tracker_dir()}/CompanyHealth.md "
+          f"({len(rows)} companies)")
+    return 0
+
+
 def cmd_sentiment(args: argparse.Namespace) -> int:
     _preflight()
     from datetime import datetime, timezone
@@ -605,6 +637,12 @@ def build_parser() -> argparse.ArgumentParser:
     se.add_argument("tickers", nargs="*", help="specific tickers (default: universe)")
     se.add_argument("--limit", type=int, default=None, help="only the first N tickers")
     se.set_defaults(func=cmd_sentiment)
+
+    he = sub.add_parser("health", help="company-health snapshot (CompanyHealth.md)")
+    he.add_argument("tickers", nargs="*", help="specific tickers (default: held positions)")
+    he.add_argument("--universe", action="store_true", help="score the whole universe")
+    he.add_argument("--limit", type=int, default=None, help="only the first N tickers")
+    he.set_defaults(func=cmd_health)
 
     cp = sub.add_parser("copilot", help="AI co-pilot's take on the latest cycle (Copilot.md; opt-in)")
     cp.set_defaults(func=cmd_copilot)

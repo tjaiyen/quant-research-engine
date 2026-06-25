@@ -466,6 +466,49 @@ GLOSSARY: dict[str, dict] = {
                 "cannot place trades.",
         "example": "'The market looks defensive; the top picks skew toward stable names.'",
     },
+
+    # ── company health ───────────────────────────────────────────────────────
+    "health_score": {
+        "plain": "Company health", "term": "health score",
+        "short": "Is the company financially sound? Grades its profitability + balance sheet against the minimums for its sector.",
+        "long": "Each company's quality metrics (return on equity, margins, debt, liquidity) are "
+                "checked against the minimum 'floors' that are normal for its sector. The score is how "
+                "many it passes: 🟢 STRONG (most), 🟡 FAIR, 🔴 WEAK, ⚪ data unavailable. It's a "
+                "soundness check, separate from whether the stock is cheap.",
+        "example": "Passes 4 of 4 floors → 🟢 STRONG; passes 1 of 4 → 🔴 WEAK.",
+        "theory": "A cheap stock in a financially weak company can be a value trap — health screens "
+                  "for that.",
+    },
+    "roe": {
+        "plain": "Profit on shareholders' money", "term": "ROE",
+        "short": "Return on equity — profit earned per dollar of shareholder capital. Higher = more efficient.",
+        "long": "ROE divides net profit by shareholders' equity: how much profit the company makes on "
+                "the money owners have put in. Consistently high ROE signals a quality business.",
+        "example": "ROE 18% = 18¢ of profit a year per $1 of equity.",
+    },
+    "debt_to_equity": {
+        "plain": "Borrowing vs own money", "term": "debt/equity",
+        "short": "How much the company borrows relative to its own capital. Lower = less risky; 'normal' varies by sector.",
+        "long": "Debt-to-equity compares borrowed money to shareholders' equity. High leverage amplifies "
+                "both gains and risk; utilities/REITs normally run higher, tech lower — so it's graded "
+                "against the sector.",
+        "example": "D/E 0.6 = 60¢ of debt per $1 of equity (conservative for most sectors).",
+    },
+    "operating_margin": {
+        "plain": "Profit per sales dollar", "term": "operating margin",
+        "short": "What fraction of revenue is left as operating profit. Higher = more efficient/pricing power.",
+        "long": "Operating margin is operating profit divided by revenue — how much of each sales dollar "
+                "survives after the costs of running the business. Wider margins signal pricing power "
+                "and efficiency.",
+        "example": "12% operating margin = 12¢ operating profit per $1 of sales.",
+    },
+    "next_earnings": {
+        "plain": "Next earnings date", "term": "earnings date",
+        "short": "When the company next reports quarterly results — a known volatility event.",
+        "long": "The scheduled date of the next quarterly earnings report. Results often move the stock "
+                "sharply, so the engine also avoids buying right before it (the earnings blackout).",
+        "example": "Earns Jul 23 — expect bigger-than-usual moves around then.",
+    },
 }
 
 

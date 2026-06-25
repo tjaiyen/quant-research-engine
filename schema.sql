@@ -218,3 +218,21 @@ CREATE TABLE IF NOT EXISTS news_sentiment (
     confidence       REAL,                             -- mean model confidence 0..1
     updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Phase 21: per-company health snapshot — quality metrics graded against the
+-- sector floors in industry_config.SECTOR_QUALITY_FLOORS. Monitoring overlay
+-- (not a screener signal). One current row per ticker (snapshot, not history).
+CREATE TABLE IF NOT EXISTS company_health (
+    ticker            TEXT PRIMARY KEY,
+    roe               REAL,                            -- return on equity (fraction)
+    operating_margin  REAL,
+    profit_margin     REAL,
+    debt_to_equity    REAL,                            -- normalised to a ratio (not percent)
+    current_ratio     REAL,
+    eps_ttm           REAL,
+    health_score      REAL,                            -- 0..1 = fraction of applicable floors passed
+    health_label      TEXT,                            -- STRONG|FAIR|WEAK|UNAVAILABLE
+    floors_passed     INTEGER NOT NULL DEFAULT 0,
+    floors_total      INTEGER NOT NULL DEFAULT 0,
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);

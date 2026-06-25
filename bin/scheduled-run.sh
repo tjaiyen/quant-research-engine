@@ -64,6 +64,7 @@ fail=0
     weekly)
       echo "--- seed --refresh ---"; run seed --refresh || { echo "FAIL: seed"; fail=1; }
       echo "--- screen ---";         run screen        || { echo "FAIL: screen"; fail=1; }
+      echo "--- health ---";         run health        || echo "WARN: health (best-effort)"
       ;;
     daily)
       echo "--- paper monitor ---";  run paper monitor || { echo "FAIL: monitor"; fail=1; }

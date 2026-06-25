@@ -279,12 +279,21 @@ def build_all() -> dict:
             names = ticker_names()
         except Exception:
             names = {}
+        try:  # company-health snapshot, joined with valuation + next earnings
+            from utils.db import (fetch_earnings, fetch_latest_fundamentals,
+                                  list_health)
+            health = [{**h, "pe": (fetch_latest_fundamentals(h["ticker"]) or {}).get("pe"),
+                       "next_earnings": fetch_earnings(h["ticker"])}
+                      for h in list_health()]
+        except Exception:
+            health = []
         atomic_write(root / "Dashboard.html", _html.dashboard_html({
             "as_of": now_iso, "regime": regime, "top_picks": top_picks,
             "summary": (results or {}).get("summary"),
             "sectors": (results or {}).get("sectors"),
             "latest_snapshot": latest_snapshot, "snapshots": snapshots,
             "positions": paper["positions"], "sentiment": sentiment, "names": names,
+            "health": health,
             "decisions": [notes._decision_text(d) for d in decisions],
             "scorecard": scorecard, "copilot": _latest_copilot(),
             "last_run": _latest_run(), "tournament": _latest_tournament(),
