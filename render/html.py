@@ -393,7 +393,8 @@ def _tournament_section(t: dict) -> str:
         ctl = " ·ctl" if r.get("group") == "control" else ""
         rows.append(
             f"<tr><td>{_esc(r.get('rank'))}</td>"
-            f"<td><strong>{_esc(r.get('label'))}</strong>{ctl}</td>"
+            f"<td><strong>{_esc(r.get('label'))}</strong>{ctl} "
+            f"{_ibtn(_gloss.strategy_key(r.get('label')))}</td>"
             f"<td class='{tone}'>{pct(tot)}</td>"
             f"<td>{num(r.get('sharpe'), 2) if r.get('sharpe') is not None else '—'}</td>"
             f"<td>{pct(r.get('excess'))}</td></tr>")

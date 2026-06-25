@@ -71,6 +71,22 @@ def test_run_banner_states():
     assert html._run_banner({}) == ""   # no beacon → no banner
 
 
+def test_tournament_strategies_carry_explanations():
+    from render import glossary
+    d = _sample()
+    d["tournament"] = {"verdict": "ok", "beat_spy": 0.05, "beat_random": 0.04,
+                       "oos_rank": 2, "leaderboard": [
+                           {"rank": 1, "label": "Pure Sharpe", "group": "weighting",
+                            "total": 0.31, "sharpe": 1.2, "excess": 0.05},
+                           {"rank": 2, "label": "SPY buy-hold", "group": "control",
+                            "total": 0.26, "sharpe": 0.9, "excess": 0.0}]}
+    out = html.dashboard_html(d)
+    assert f'data-term="{glossary.strategy_key("Pure Sharpe")}"' in out
+    assert f'data-term="{glossary.strategy_key("SPY buy-hold")}"' in out
+    # the explanation + example are embedded for the JS popover
+    assert "Reward-for-risk only" in out and "calmest high-return" in out
+
+
 def test_dashboard_html_shows_tournament_card():
     d = _sample()
     d["tournament"] = {"verdict": "Top-1 won, beat SPY.", "beat_spy": 0.05,

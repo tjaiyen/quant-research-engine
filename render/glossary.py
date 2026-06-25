@@ -19,6 +19,7 @@ client JS. `label()` builds "Plain (Term)"; `as_json()` serialises the registry.
 from __future__ import annotations
 
 import json
+import re
 
 # key -> {plain, term, short, long, example, theory?}
 GLOSSARY: dict[str, dict] = {
@@ -490,6 +491,115 @@ def as_json() -> str:
     return json.dumps(GLOSSARY, ensure_ascii=False, separators=(",", ":"))
 
 
+# ── tournament strategies ────────────────────────────────────────────────────
+# Each strategy variant raced in the tournament gets a plain-language definition
+# + a concrete worked example, surfaced as a "?" beside its leaderboard row. Keyed
+# by the variant's exact label (from screener/tournament/variants.py); a test
+# enforces that every live variant has an entry, so this never silently drifts.
+def strategy_key(label_: str) -> str:
+    """Stable glossary key for a tournament strategy label."""
+    slug = re.sub(r"[^a-z0-9]+", "_", str(label_).lower()).strip("_")
+    return f"strat_{slug}"
+
+
+_STRATEGIES: dict[str, dict] = {
+    # controls (null-hypothesis benchmarks)
+    "SPY buy-hold": {
+        "plain": "Just buy the market",
+        "short": "Buy the whole S&P 500 and hold it — the 'do nothing clever' benchmark every strategy must beat.",
+        "example": "Put all $10k in an S&P 500 fund on day one and never trade again."},
+    "Equal-weight universe": {
+        "plain": "Buy a bit of everything",
+        "short": "Hold a little of every stock in the list, in equal amounts — maximum spread, no stock-picking.",
+        "example": "$10k split evenly across all ~220 stocks."},
+    "Random 20 (seed)": {
+        "plain": "Pick 20 at random",
+        "short": "Hold 20 randomly chosen stocks — the luck benchmark. If the clever strategies can't beat random, they have no real skill.",
+        "example": "Throw darts at the list, hold the 20 you hit."},
+    # signal weighting
+    "Regime-blended (default)": {
+        "plain": "Smart blend (the live engine)",
+        "short": "The live strategy: blends all 5 signals, shifting the weights with the market's mood (calm vs fearful).",
+        "example": "In a calm market it leans on trend signals; in a fearful one, on risk signals."},
+    "Equal 5 signals": {
+        "plain": "All signals equal",
+        "short": "Weight all 5 signals the same, whatever the market mood.",
+        "example": "Each signal counts 20% toward a stock's score."},
+    "Pure Sharpe": {
+        "plain": "Reward-for-risk only",
+        "short": "Rank stocks only by reward-for-risk (Sharpe); ignore the other four signals.",
+        "example": "Pick the calmest high-return names, nothing else considered."},
+    "Pure Monte-Carlo": {
+        "plain": "Crash-risk signal only",
+        "short": "Rank only by the 10,000-path crash-risk simulation; ignore the rest.",
+        "example": "Buy whatever the simulation rates as least likely to crash."},
+    "Pure ARIMA": {
+        "plain": "Trend forecast only",
+        "short": "Rank only by the trend-forecast signal; ignore risk and efficiency.",
+        "example": "Buy the stocks ARIMA expects to rise the most."},
+    "Pure Kalman": {
+        "plain": "Smoothed-trend only",
+        "short": "Rank only by the noise-smoothed trend signal.",
+        "example": "Buy stocks whose underlying (de-noised) price is turning up."},
+    "Pure GARCH": {
+        "plain": "Calmest stocks only",
+        "short": "Rank only by the volatility forecast — favour the calmest names.",
+        "example": "Buy the lowest predicted-volatility stocks."},
+    "Trend (ARIMA+Kalman)": {
+        "plain": "Trend signals only",
+        "short": "Blend just the two trend signals (ARIMA + Kalman); ignore the risk signals.",
+        "example": "Lean into direction/momentum, ignore how risky a name is."},
+    "Risk (Sharpe+MC+GARCH)": {
+        "plain": "Risk signals only",
+        "short": "Blend just the three risk/efficiency signals; ignore raw trend.",
+        "example": "Favour safe, efficient names even if their trend is flat."},
+    # concentration
+    "Top-1 per sector": {
+        "plain": "Best 1 per sector",
+        "short": "Buy only the single best stock from each sector — concentrated.",
+        "example": "11 sectors → 11 holdings, the top pick in each."},
+    "Top-3 per sector": {
+        "plain": "Best 3 per sector",
+        "short": "Buy the top 3 from each sector — more spread than top-1.",
+        "example": "11 sectors → up to 33 holdings."},
+    "Top-5 per sector": {
+        "plain": "Best 5 per sector",
+        "short": "Buy the top 5 from each sector — the most diversified mix.",
+        "example": "11 sectors → up to 55 holdings."},
+    # sizing
+    "Score-weighted sizing": {
+        "plain": "Bet more on conviction",
+        "short": "Put more money into higher-scoring picks instead of equal amounts.",
+        "example": "A 0.80-score pick gets more dollars than a 0.60-score one."},
+    # veto policy
+    "Guards off": {
+        "plain": "Safety filters off",
+        "short": "Skip the risk vetoes — buy top scores even if too volatile or near earnings. A test of whether the guards help.",
+        "example": "Ignore the safety filters and just buy the highest scores."},
+    # diagnostics
+    "Worst-ranked (inverse)": {
+        "plain": "Buy the worst (sanity check)",
+        "short": "Deliberately buy the LOWEST-ranked stocks. A control: if these don't lag the best, the ranking has no signal.",
+        "example": "Buy the bottom-2 per sector instead of the top-2."},
+    "High conviction (top-1, score)": {
+        "plain": "All-in on the best",
+        "short": "Only the single best pick per sector, sized by conviction — the most aggressive bet on the engine being right.",
+        "example": "One holding per sector, biggest bets on the highest scores."},
+    # the live candidate (added to the race in the re-validation)
+    "CANDIDATE ARIMA+Sharpe": {
+        "plain": "The live candidate",
+        "short": "The current live weighting: ARIMA trend + Sharpe efficiency only, dropping the 3 signals that predicted backwards.",
+        "example": "Score = 62% ARIMA + 38% Sharpe; the other 3 signals get 0%."},
+}
+
+for _label, _d in _STRATEGIES.items():
+    GLOSSARY[strategy_key(_label)] = {
+        "plain": _d["plain"], "term": _d["plain"],   # term==plain → no parenthetical
+        "short": _d["short"], "long": _d.get("long", _d["short"]),
+        "example": _d["example"],
+    }
+
+
 KEYS = frozenset(GLOSSARY)
 
-__all__ = ["GLOSSARY", "KEYS", "label", "short", "has", "as_json"]
+__all__ = ["GLOSSARY", "KEYS", "label", "short", "has", "as_json", "strategy_key"]

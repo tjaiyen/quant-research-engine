@@ -35,6 +35,23 @@ def test_as_json_is_valid_and_roundtrips():
     assert parsed["ic"]["term"] == "IC"
 
 
+def test_every_tournament_variant_is_explained():
+    # Sync guard: every strategy raced in the tournament must carry a plain-language
+    # explanation + example, so the dashboard never shows an unexplained strategy.
+    from screener.tournament.variants import default_variants
+    labels = [v["label"] for v in default_variants()] + ["CANDIDATE ARIMA+Sharpe"]
+    for lbl in labels:
+        key = glossary.strategy_key(lbl)
+        assert glossary.has(key), f"tournament strategy '{lbl}' ({key}) has no explanation"
+        e = glossary.GLOSSARY[key]
+        assert e["short"] and e["example"], f"strategy '{lbl}' missing short/example"
+
+
+def test_strategy_key_is_stable_slug():
+    assert glossary.strategy_key("Pure Sharpe") == "strat_pure_sharpe"
+    assert glossary.strategy_key("Risk (Sharpe+MC+GARCH)") == "strat_risk_sharpe_mc_garch"
+
+
 def test_no_jargon_leak_in_plain_labels():
     # The leading plain label should not itself be the bare acronym/jargon.
     jargon = {"IC", "DSR", "CPCV", "GARCH", "ARIMA", "HMM", "P&L", "OOS"}
