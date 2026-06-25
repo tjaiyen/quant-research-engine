@@ -152,3 +152,31 @@ def test_required_concepts_are_defined():
     for key in ("regime", "composite", "veto", "ic", "sharpe", "dsr", "cpcv",
                 "alpha", "drawdown", "out_of_sample", "momentum", "unrealized_pnl"):
         assert glossary.has(key), f"missing core glossary term: {key}"
+
+
+def test_static_completeness_gate_no_undefined_keys():
+    """Source-level gate: EVERY glossary key wired into html.py must be defined —
+    independent of which sections a given run's data happens to populate."""
+    import re
+    from render import glossary
+    src = open(html.__file__, encoding="utf-8").read()
+    keys = set()
+    keys |= set(re.findall(r'_ibtn\("([a-z_]+)"\)', src))
+    keys |= set(re.findall(r'_term\("([a-z_]+)"\)', src))
+    keys |= set(re.findall(r'_th\("([a-z_]+)"', src))
+    keys |= set(re.findall(r'key="([a-z_]+)"', src))
+    keys |= set(re.findall(r'sub_key="([a-z_]+)"', src))
+    keys |= set(re.findall(r'_title\(\s*"[^"]*",\s*"[^"]*",\s*"([a-z_]+)"', src))
+    # dynamic veto-reason → key mapping must also only yield defined keys
+    keys |= {html._veto_key(r) for r in
+             ["EARNINGS_BLACKOUT", "SENTIMENT_VETO", "VETO_VOL", "VETO_TAIL", "other"]}
+    assert keys, "expected to find wired glossary keys in html.py source"
+    missing = keys - set(glossary.KEYS)
+    assert not missing, f"html.py wires undefined glossary keys: {missing}"
+
+
+def test_signal_bar_keys_are_all_defined():
+    # Every per-pick signal bar label must have a glossary entry.
+    from render import glossary
+    for sig in html._SIGNALS:
+        assert glossary.has(sig), f"signal bar '{sig}' has no glossary entry"

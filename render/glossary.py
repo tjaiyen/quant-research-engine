@@ -152,7 +152,7 @@ GLOSSARY: dict[str, dict] = {
     },
     "sharpe": {
         "plain": "Reward for the risk", "term": "Sharpe ratio",
-        "short": "Return earned per unit of bumpiness. Higher = smoother, more efficient gains.",
+        "short": "Annualized return divided by how much it bounces around. Higher = smoother gains.",
         "long": "The Sharpe ratio divides a stock's return by how much it bounced around to get it. "
                 "A high Sharpe means the gains came smoothly; a low one means a wild ride for the "
                 "same result.",

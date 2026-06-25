@@ -17,7 +17,10 @@ from render import glossary as _gloss
 from render.markdown import money, num, pct
 
 _REFRESH_SECONDS = 900  # an open tab reloads itself every 15 min
-_SIGNALS = ("arima", "kalman", "garch", "monte_carlo", "sharpe", "momentum")
+# The signals the engine actually emits per pick (== EXPECTED_SIGNAL_KEYS).
+# Momentum is measured-only (held), so it is NOT a per-pick bar — its explainer
+# lives in the Signal-Lab IC table, where it IS measured (see _signal_lab_section).
+_SIGNALS = ("arima", "kalman", "garch", "monte_carlo", "sharpe")
 
 
 def _esc(s) -> str:
@@ -38,11 +41,17 @@ def _regime_color(label: str) -> str:
 # carries an info button JS turns into a tooltip (hover/focus) + worked-example
 # popover (click). One source of truth: render/glossary.py. ───────────────────
 def _ibtn(key: str) -> str:
-    """A tiny '?' button JS wires to the glossary entry for `key` (or nothing)."""
-    if not _gloss.has(key):
+    """A tiny '?' button JS wires to the glossary entry for `key` (or nothing).
+
+    The `aria-label` carries the plain definition so screen-reader users hear it
+    directly, without needing the visual tooltip.
+    """
+    e = _gloss.GLOSSARY.get(key)
+    if not e:
         return ""
+    aria = f'{e["plain"]}: {e.get("short", "")}'.strip().rstrip(":")
     return (f'<button class="i" type="button" data-term="{_esc(key)}" '
-            f'aria-label="What does this mean?">?</button>')
+            f'aria-label="{_esc(aria)}">?</button>')
 
 
 def _term(key: str) -> str:
@@ -349,7 +358,10 @@ def _signal_lab_section(sl: dict) -> str:
     for s, d in sorted(sigs.items(), key=lambda kv: -(kv[1].get("ic") or -9)):
         ic = d.get("ic")
         tone = "pos" if (ic or 0) > 0.02 else "neg" if (ic or 0) < -0.02 else ""
-        rows.append(f"<tr><td><strong>{_esc(s)}</strong></td>"
+        plain = _gloss.GLOSSARY.get(s, {}).get("plain")
+        name = (f"<strong>{_esc(plain)}</strong> {_ibtn(s)}" if plain
+                else f"<strong>{_esc(s)}</strong>")
+        rows.append(f"<tr><td>{name}</td>"
                     f"<td class='{tone}'>{pct(ic)}</td><td>{_esc(d.get('verdict'))}</td></tr>")
     tbl = (f'<table class="tbl"><thead><tr><th>Signal</th>{_th("ic", "IC")}'
            f'{_th("verdict", "Verdict")}</tr></thead><tbody>{"".join(rows)}</tbody></table>')
@@ -399,15 +411,16 @@ def _run_banner(lr: dict) -> str:
     if not lr:
         return ""
     job, ended = _esc(lr.get("job")), _esc(str(lr.get("ended")).replace("T", " "))
+    info = _ibtn("automation_health")
     if lr.get("status") == "fail":
         return (f'<div class="runbar fail">⚠ Last scheduled run (<strong>{job}</strong>) '
-                f'FAILED at {ended} — check <code>logs/</code>.</div>')
+                f'FAILED at {ended} — check <code>logs/</code>.{info}</div>')
     if lr.get("stale"):
         return (f'<div class="runbar warn">⚠ No scheduled run in '
                 f'<strong>{_esc(lr.get("age_h"))}h</strong> (last: {job} at {ended}) — '
-                f'is the Mac asleep, or are the launchd agents loaded?</div>')
+                f'is the Mac asleep, or are the launchd agents loaded?{info}</div>')
     return (f'<div class="runbar ok">✓ Automation healthy — last run '
-            f'<strong>{job}</strong> at {ended}.</div>')
+            f'<strong>{job}</strong> at {ended}.{info}</div>')
 
 
 # Vanilla client JS (no libraries). `__GLOSSARY_JSON__` is substituted at render
@@ -422,7 +435,7 @@ _PAGE_JS = r"""(function(){
   function place(el){
     tip.style.visibility='hidden'; tip.classList.add('show');
     var r=el.getBoundingClientRect(), tw=tip.offsetWidth, th=tip.offsetHeight;
-    var left=Math.min(Math.max(8,r.left), window.innerWidth-tw-8);
+    var left=Math.max(8, Math.min(r.left, window.innerWidth-tw-8));
     var top=r.bottom+8; if(top+th>window.innerHeight-8) top=r.top-th-8;
     tip.style.left=left+'px'; tip.style.top=Math.max(8,top)+'px'; tip.style.visibility='';
   }
@@ -442,7 +455,7 @@ _PAGE_JS = r"""(function(){
     btn.addEventListener('blur',hide);
     btn.addEventListener('click',function(ev){ ev.stopPropagation(); showRich(btn); });
   });
-  document.addEventListener('click',function(){ if(pinned) unpin(); });
+  document.addEventListener('click',function(ev){ if(pinned && !tip.contains(ev.target)) unpin(); });
   document.addEventListener('keydown',function(ev){ if(ev.key==='Escape'){ unpin(); closeGloss(); } });
   var lb=document.getElementById('learnBtn');
   function setLearn(on){ document.body.classList.toggle('learn',on); lb.classList.toggle('on',on);
@@ -466,7 +479,8 @@ _PAGE_JS = r"""(function(){
         (e.example?'<p class="ex"><b>Example:</b> '+esc(e.example)+'</p>':'')+'</div>'; });
     list.innerHTML = html || '<p class="g">No terms match.</p>'; }
   function openGloss(){ renderGloss(''); gloss.classList.add('show'); search.value=''; search.focus(); }
-  function closeGloss(){ if(gloss) gloss.classList.remove('show'); }
+  function closeGloss(){ if(gloss && gloss.classList.contains('show')){
+    gloss.classList.remove('show'); var b=document.getElementById('glossBtn'); if(b) b.focus(); } }
   document.getElementById('glossBtn').addEventListener('click',openGloss);
   document.getElementById('glossX').addEventListener('click',closeGloss);
   gloss.addEventListener('click',function(ev){ if(ev.target===gloss) closeGloss(); });
@@ -597,7 +611,7 @@ def dashboard_html(data: dict) -> str:
   .toolbar .hint {{ color: #6e7681; font-size: 12px; }}
   button.i {{ all: unset; cursor: help; display: inline-flex; align-items: center;
     justify-content: center; width: 15px; height: 15px; margin-left: 5px;
-    border-radius: 50%; background: #21303f; color: #58a6ff; font-size: 10px;
+    border-radius: 50%; background: #21303f; color: #79c0ff; font-size: 10px;
     font-weight: 700; vertical-align: middle; line-height: 1; }}
   button.i:hover, button.i:focus-visible {{ background: #1f6feb; color: #fff; outline: none; }}
   button.i:focus-visible {{ box-shadow: 0 0 0 2px #1f6feb55; }}
@@ -645,6 +659,7 @@ def dashboard_html(data: dict) -> str:
   .intro[hidden] {{ display: none; }}
   .intro b {{ color: #e6edf3; }}
   .intro ul {{ margin: 8px 0 0; padding-left: 18px; }} .intro li {{ margin: 3px 0; }}
+  @media (max-width: 480px) {{ #tip {{ max-width: 90vw; }} }}
   @media (prefers-reduced-motion: reduce) {{ * {{ transition: none !important; }} }}
 </style></head>
 <body><div class="wrap">
