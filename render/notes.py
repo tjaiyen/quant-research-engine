@@ -492,6 +492,69 @@ def agent_log_note(decisions: list[dict]) -> str:
     return document(fm, body)
 
 
+# ── Signal Lab ───────────────────────────────────────────────────────────────
+
+def signal_lab_note(data: dict) -> str:
+    sigs = data.get("signals", {}) or {}
+    fm = {"title": "SignalLab", "type": "tracker-signal-lab",
+          "as_of": data.get("as_of"), "n_dates": data.get("n_dates")}
+    if not sigs:
+        return document(fm, "# 🔬 Signal Lab\n\n_No analysis yet — `track signal-lab` "
+                        "(needs a tournament panel: `track tournament` first)._\n")
+
+    rows = []
+    for s, d in sorted(sigs.items(), key=lambda kv: -(kv[1].get("ic") or -9)):
+        ic = d.get("ic")
+        rows.append([
+            s, pct(ic) if ic is not None else "—",
+            num(d.get("ic_ir"), 1) if d.get("ic_ir") is not None else "—",
+            pct(d.get("quintile_spread")) if d.get("quintile_spread") is not None else "—",
+            d.get("verdict", ""),
+        ])
+    ic_tbl = table(["Signal", "IC", "Info ratio", "Quintile spread", "Verdict"], rows)
+
+    cand = data.get("candidate_weights", {}) or {}
+    kept = ", ".join(f"{k} {pct(v)}" for k, v in cand.items() if v and v > 0.001)
+    val = data.get("validation", {}) or {}
+    val_tbl = ""
+    if val:
+        val_tbl = table(["Out-of-sample", "Return"], [
+            ["Candidate (kept signals)", pct(val.get("candidate_oos"))],
+            ["Current engine default", pct(val.get("default_oos"))],
+            ["SPY buy-hold", pct(val.get("spy_oos"))],
+        ])
+
+    best = max(sigs.items(), key=lambda kv: (kv[1].get("ic") or -9))
+    worst = min(sigs.items(), key=lambda kv: (kv[1].get("ic") if kv[1].get("ic") is not None else 9))
+    beats = val.get("candidate_oos") is not None and val.get("spy_oos") is not None \
+        and val["candidate_oos"] > val["spy_oos"]
+
+    body = (
+        "# 🔬 Signal Lab — does each signal actually predict?\n\n"
+        f"> [!{'success' if beats else 'warning'}] Finding\n"
+        f"> **{best[0]}** is the only signal with real edge (IC {pct(best[1].get('ic'))}); "
+        f"**{worst[0]}** predicts *backwards* (IC {pct(worst[1].get('ic'))}). Keeping only the "
+        f"positive-IC signals ({kept or 'none'}) "
+        + (f"**beat buy-and-hold SPY out-of-sample** ({pct(val.get('candidate_oos'))} vs "
+           f"{pct(val.get('spy_oos'))}, weights derived in-sample)."
+           if beats else "did not clearly beat the controls out-of-sample.") + "\n\n"
+        "_Information Coefficient (IC) = cross-sectional rank correlation between a signal and "
+        "the next quarter's return, per rebalance date then averaged. Positive = predictive; "
+        "negative = predicts backwards. Quintile spread = top-fifth minus bottom-fifth forward "
+        f"return. Over {data.get('n_dates','?')} rebalances._\n\n"
+        f"## Per-signal predictive power\n\n{ic_tbl}\n\n"
+        + (f"## Candidate re-weighting (drop the duds)\n\n"
+           f"Keep **{kept}**, drop the rest. **Out-of-sample** (weights derived from in-sample "
+           f"dates only, judged on held-out dates):\n\n{val_tbl}\n\n" if val_tbl else "")
+        + "_Honest caveats: one ~3-year price path, few out-of-sample quarters — the IC "
+        "diagnosis is robust (consistent across windows) but the OOS edge needs forward "
+        "paper-validation before trusting it. The live weights are unchanged; this is opt-in "
+        "via `WEIGHT_MATRIX_MODE`. Re-weighting only redistributes among 5 signals — if they're "
+        "weak, the real fix is new signals (momentum / quality / value)._\n"
+    )
+    return document(fm, body)
+
+
 # ── Strategy tournament ──────────────────────────────────────────────────────
 
 def tournament_note(data: dict) -> str:

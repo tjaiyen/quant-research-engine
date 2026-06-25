@@ -254,10 +254,33 @@ def _copilot_section(copilot: dict) -> str:
 
 _NAV = [("Dashboard.md", "Dashboard"), ("Regime.md", "Regime"),
         ("Decisions.md", "Decisions"), ("Performance.md", "Performance"),
-        ("Scorecard.md", "Scorecard"), ("Tournament.md", "Tournament"),
+        ("Scorecard.md", "Scorecard"), ("SignalLab.md", "Signal Lab"),
+        ("Tournament.md", "Tournament"),
         ("Review.md", "Review"), ("Copilot.md", "Co-pilot"),
         ("Clusters.md", "Clusters"), ("Sentiment.md", "Sentiment"),
         ("Start Here.md", "Start Here")]
+
+
+def _signal_lab_section(sl: dict) -> str:
+    sigs = sl.get("signals") or {}
+    if not sigs:
+        return ""
+    rows = []
+    for s, d in sorted(sigs.items(), key=lambda kv: -(kv[1].get("ic") or -9)):
+        ic = d.get("ic")
+        tone = "pos" if (ic or 0) > 0.02 else "neg" if (ic or 0) < -0.02 else ""
+        rows.append(f"<tr><td><strong>{_esc(s)}</strong></td>"
+                    f"<td class='{tone}'>{pct(ic)}</td><td>{_esc(d.get('verdict'))}</td></tr>")
+    tbl = (f'<table class="tbl"><thead><tr><th>Signal</th><th>IC</th><th>Verdict</th>'
+           f'</tr></thead><tbody>{"".join(rows)}</tbody></table>')
+    val = sl.get("validation") or {}
+    strip = ""
+    if val.get("candidate_oos") is not None:
+        strip = (f'<p class="muted">Out-of-sample ({_esc(val.get("n_oos"))} quarters): '
+                 f'candidate <strong>{pct(val.get("candidate_oos"))}</strong> · '
+                 f'default {pct(val.get("default_oos"))} · SPY {pct(val.get("spy_oos"))}</p>')
+    return _card("\U0001F52C Signal Lab <span class=\"muted\">(does each signal predict?)</span>",
+                 f'{strip}{tbl}')
 
 
 def _tournament_section(t: dict) -> str:
@@ -434,6 +457,7 @@ def dashboard_html(data: dict) -> str:
 
   {_positions_section(data.get("positions") or [])}
   {_sentiment_section(data.get("sentiment"))}
+  {_signal_lab_section(data.get("signal_lab") or {})}
   {_tournament_section(data.get("tournament") or {})}
   {_scorecard_section(data.get("scorecard"))}
   {_copilot_section(data.get("copilot") or {})}

@@ -75,6 +75,7 @@ _STORE = Path(__file__).resolve().parent.parent / "store"
 _COPILOT_SIDECAR = _STORE / "last_copilot.json"
 _RUN_BEACON = _STORE / "last_run.json"
 _TOURNAMENT_SIDECAR = _STORE / "last_tournament.json"
+_SIGNAL_LAB_SIDECAR = _STORE / "last_signal_lab.json"
 
 
 def _latest_copilot() -> dict:
@@ -89,6 +90,14 @@ def _latest_tournament() -> dict:
     """The last tournament leaderboard (written by `track tournament`), or {}."""
     try:
         return json.loads(_TOURNAMENT_SIDECAR.read_text())
+    except Exception:
+        return {}
+
+
+def _latest_signal_lab() -> dict:
+    """The last signal-lab diagnosis (written by `track signal-lab`), or {}."""
+    try:
+        return json.loads(_SIGNAL_LAB_SIDECAR.read_text())
     except Exception:
         return {}
 
@@ -274,6 +283,7 @@ def build_all() -> dict:
             "decisions": [notes._decision_text(d) for d in decisions],
             "scorecard": scorecard, "copilot": _latest_copilot(),
             "last_run": _latest_run(), "tournament": _latest_tournament(),
+            "signal_lab": _latest_signal_lab(),
         }))
         written.append("Dashboard.html")
     except Exception as exc:

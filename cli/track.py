@@ -15,6 +15,7 @@ Replaces the Dash app + Fly cron with local rituals:
     track clusters               k-means diversification clusters (Clusters.md)
     track sentiment              FinBERT news-sentiment overlay (Sentiment.md)
     track copilot                AI co-pilot's take on the latest cycle (Copilot.md; opt-in)
+    track signal-lab             per-signal IC + a validated re-weighting (SignalLab.md)
     track tournament             race ~20 strategy variants over history (Tournament.md; ~15-25 min)
     track sim                    strategy portfolio backtest (StrategyBacktest.md; ~10-15 min)
     track backtest               retrospective skill check (Backtest.md; ~minutes)
@@ -262,6 +263,76 @@ def cmd_sentiment(args: argparse.Namespace) -> int:
     }
     atomic_write(tracker_dir() / "Sentiment.md", notes.sentiment_note(data))
     print(f"Sentiment note written → {tracker_dir()}/Sentiment.md")
+    return 0
+
+
+def cmd_signal_lab(args: argparse.Namespace) -> int:
+    _preflight()
+    import json
+    from datetime import datetime, timezone
+
+    from render import notes
+    from render.markdown import atomic_write, tracker_dir
+    from screener.signal_lab.lab import analyze_signals, recommend_weights
+    from screener.tournament.panel import build_signal_panel
+    from screener.tournament.run import _segment
+    from screener.tournament.variants import _strat
+
+    panel = build_signal_panel(years=args.years, rebalance=args.rebalance,
+                               max_per_sector=args.max_per_sector,
+                               use_cache=not args.rebuild)
+    if len(panel.get("rows", [])) < 1:
+        print("No signal panel yet — run `track tournament` first (it builds the panel).")
+        return 1
+    analysis = analyze_signals(panel)
+
+    # Clean out-of-sample validation: derive the candidate from IN-SAMPLE dates
+    # only, then judge it on the held-out dates (no leakage).
+    segs = panel["segments"]
+    n, n_is = len(segs), max(2, round(len(segs) * 0.66))
+    is_dates = {s["d0"] for s in segs[:n_is]}
+    panel_is = {**panel, "segments": segs[:n_is],
+                "rows": [r for r in panel["rows"] if r["d0"] in is_dates]}
+    cand_is = recommend_weights(analyze_signals(panel_is))
+
+    def _oos(spec):
+        eq = 1.0
+        for seg in segs[n_is:]:
+            rows = [r for r in panel["rows"] if r["d0"] == seg["d0"]]
+            ret, _ = _segment(seg, rows, spec)
+            eq *= (1.0 + ret)
+        return eq - 1.0
+
+    spy = 1.0
+    for seg in segs[n_is:]:
+        spy *= (1.0 + (seg.get("spy_return") or 0.0))
+    val = {"candidate_oos": _oos(_strat("c", "candidate", weights=cand_is)),
+           "default_oos": _oos(_strat("d", "weighting", weights=None)),
+           "spy_oos": spy - 1.0, "n_oos": n - n_is}
+
+    data = {"as_of": datetime.now(timezone.utc).isoformat(),
+            "n_dates": analysis["n_dates"], "n_rows": analysis["n_rows"],
+            "signals": analysis["signals"], "correlation": analysis["correlation"],
+            "candidate_weights": recommend_weights(analysis), "validation": val}
+    atomic_write(tracker_dir() / "SignalLab.md", notes.signal_lab_note(data))
+    try:
+        sc = REPO_ROOT / "store" / "last_signal_lab.json"
+        sc.parent.mkdir(parents=True, exist_ok=True)
+        sc.write_text(json.dumps({
+            "as_of": data["as_of"],
+            "signals": {s: {"ic": d["ic"], "verdict": d["verdict"]}
+                        for s, d in analysis["signals"].items()},
+            "candidate_weights": data["candidate_weights"], "validation": val}))
+    except Exception as exc:
+        print(f"  (signal-lab sidecar not written: {exc})", file=sys.stderr)
+
+    print("Per-signal predictive power (IC):")
+    for s, d in sorted(analysis["signals"].items(), key=lambda kv: -(kv[1]["ic"] or -9)):
+        print(f"  {s:12} IC {(d['ic'] or 0)*100:+5.1f}%   {d['verdict']}")
+    print(f"\nOut-of-sample ({val['n_oos']} held-out quarters): candidate "
+          f"{val['candidate_oos']*100:+.1f}% · default {val['default_oos']*100:+.1f}% · "
+          f"SPY {val['spy_oos']*100:+.1f}%")
+    print(f"→ {tracker_dir()}/SignalLab.md")
     return 0
 
 
@@ -513,6 +584,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     cp = sub.add_parser("copilot", help="AI co-pilot's take on the latest cycle (Copilot.md; opt-in)")
     cp.set_defaults(func=cmd_copilot)
+
+    sl = sub.add_parser("signal-lab", help="per-signal IC + validated re-weighting (SignalLab.md)")
+    sl.add_argument("--years", type=int, default=3)
+    sl.add_argument("--rebalance", choices=["month", "quarter"], default="quarter")
+    sl.add_argument("--max-per-sector", type=int, default=10, dest="max_per_sector")
+    sl.add_argument("--rebuild", action="store_true", help="ignore the cached panel")
+    sl.set_defaults(func=cmd_signal_lab)
 
     tn = sub.add_parser("tournament", help="race ~20 strategy variants over history (Tournament.md)")
     tn.add_argument("--years", type=int, default=3)

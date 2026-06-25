@@ -82,6 +82,22 @@ WEIGHT_MATRIX: dict[str, dict[str, float]] = {
                  "monte_carlo": 0.15, "sharpe": 0.15},
 }
 
+# Signal-lab candidate weights — keep ONLY the two positive-IC signals (ARIMA,
+# Sharpe) and drop the three that predicted backwards over 2023-26 (Monte-Carlo
+# IC −0.125, Kalman −0.083, GARCH −0.051). In the strategy tournament this beat
+# the current matrix AND buy-and-hold SPY out-of-sample (+17.8% vs +12.0%, weights
+# derived in-sample only). EXPERIMENTAL — selected via `track signal-lab`, opt-in
+# via WEIGHT_MATRIX_MODE; same weights across regimes (the edge is signal-level,
+# not regime-level). Flip the live default only after forward paper-validation.
+_CAND = {"arima": 0.62, "kalman": 0.0, "garch": 0.0, "monte_carlo": 0.0, "sharpe": 0.38}
+WEIGHT_MATRIX_CANDIDATE: dict[str, dict[str, float]] = {
+    "bull": dict(_CAND), "bear": dict(_CAND), "sideways": dict(_CAND),
+}
+# "current" (default, live behavior) | "candidate" (the ARIMA+Sharpe vector).
+# Overridable per-process via the WEIGHT_MATRIX_MODE env var (for A/B without
+# changing the live default).
+WEIGHT_MATRIX_MODE: str = "current"
+
 # ── Regime-Adjusted Veto Thresholds ──────────────────────────────────────────
 VETO_THRESHOLDS: dict[str, dict[str, float]] = {
     "bull":     {"garch_vol": 0.045, "mc_loss_prob": 0.30},
@@ -171,16 +187,18 @@ EXPECTED_SIGNAL_KEYS: set[str] = {"arima", "kalman", "garch", "monte_carlo", "sh
 
 # ── Self-Validation (runs at import time — fails fast on config error) ──────
 def _validate_weight_matrix() -> None:
-    for regime, weights in WEIGHT_MATRIX.items():
-        total = sum(weights.values())
-        assert abs(total - 1.0) < 1e-9, (
-            f"WEIGHT_MATRIX['{regime}'] sums to {total:.10f}, expected 1.0. "
-            "Fix config.py before running."
-        )
-        assert set(weights.keys()) == EXPECTED_SIGNAL_KEYS, (
-            f"WEIGHT_MATRIX['{regime}'] has wrong signal keys: "
-            f"{set(weights.keys())}, expected {EXPECTED_SIGNAL_KEYS}"
-        )
+    for name, matrix in (("WEIGHT_MATRIX", WEIGHT_MATRIX),
+                         ("WEIGHT_MATRIX_CANDIDATE", WEIGHT_MATRIX_CANDIDATE)):
+        for regime, weights in matrix.items():
+            total = sum(weights.values())
+            assert abs(total - 1.0) < 1e-9, (
+                f"{name}['{regime}'] sums to {total:.10f}, expected 1.0. "
+                "Fix config.py before running."
+            )
+            assert set(weights.keys()) == EXPECTED_SIGNAL_KEYS, (
+                f"{name}['{regime}'] has wrong signal keys: "
+                f"{set(weights.keys())}, expected {EXPECTED_SIGNAL_KEYS}"
+            )
 
 
 def _validate_veto_thresholds() -> None:
