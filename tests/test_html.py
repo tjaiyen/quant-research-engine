@@ -283,6 +283,24 @@ def test_positions_grouped_by_sector_with_subtotals_and_total():
     assert "$1,001" in out
 
 
+def test_defense_breaks_out_of_industrials():
+    assert html._display_sector("GD", "Industrials") == "Defense"
+    assert html._display_sector("RTX", "Industrials") == "Defense"
+    assert html._display_sector("CSX", "Industrials") == "Industrials"   # railroad stays
+    assert html._display_sector("AAPL", "Technology") == "Technology"
+    # GD (defense) and CSX (rail) both stored as Industrials → split on the dashboard
+    pos = [{"ticker": "GD", "sector": "Industrials", "shares": 1.17,
+            "cost_basis": 362.83, "current_price": 360.0},
+           {"ticker": "CSX", "sector": "Industrials", "shares": 9.58,
+            "cost_basis": 45.57, "current_price": 46.0}]
+    out = html._positions_section(pos)
+    assert "Defense" in out and "Industrials" in out
+    # GD sits under the Defense subtotal, not Industrials
+    defense_i, indus_i = out.index("Defense"), out.index("Industrials")
+    assert out.index("GD") < max(defense_i, indus_i)       # GD present
+    assert out.count("tr class='subtotal'") == 2           # Defense + Industrials
+
+
 def test_company_names_render_next_to_tickers():
     d = _sample()
     d["positions"] = [{"ticker": "JNJ", "shares": 3, "cost_basis": 150,

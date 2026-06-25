@@ -86,6 +86,21 @@ def _asof(iso) -> str:
     return f' <span class="asof">· as of {_esc(str(iso)[:16].replace("T", " "))}</span>'
 
 
+# GICS classifies aerospace & defense as a sub-industry of Industrials, so there's
+# no "Defense" sector. For the dashboard view we break these names out into their
+# own group — DISPLAY ONLY; the engine's stored sector + diversification stay GICS.
+DEFENSE_TICKERS = frozenset({
+    "GD", "RTX", "LMT", "NOC", "BA", "GE", "LHX", "HII", "TDG", "AXON", "LDOS", "HWM",
+})
+
+
+def _display_sector(ticker, sector) -> str:
+    """Dashboard sector for grouping — 'Defense' for A&D names, else the GICS sector."""
+    if ticker and str(ticker).upper() in DEFENSE_TICKERS:
+        return "Defense"
+    return sector or "Other"
+
+
 def _ticker(sym, names: dict | None = None) -> str:
     """'<TICKER> · Company Name' — the name is muted and omitted if unknown."""
     nm = (names or {}).get(str(sym).upper()) if sym else None
@@ -336,7 +351,12 @@ def _picks_section(picks: list[dict], sectors: dict, names: dict | None = None) 
 def _sector_table(sectors: dict, names: dict | None = None) -> str:
     if not sectors:
         return ""
-    rows = []
+    # Break the A&D names out of Industrials into a "Defense" group (display only).
+    remapped: dict = {}
+    for name, stocks in sectors.items():
+        for s in (stocks or []):
+            remapped.setdefault(_display_sector(s.get("ticker"), name), []).append(s)
+    sectors = remapped
     rows, donut_parts = [], []
     for name, stocks in sectors.items():
         stocks = stocks or []
@@ -408,7 +428,7 @@ def _positions_section(positions: list[dict], names: dict | None = None) -> str:
         upnl = p.get("unrealized_pnl")
         if upnl is None and price is not None:
             upnl = (float(price) - cost) * sh
-        by_sector.setdefault(p.get("sector") or "Other", []).append(
+        by_sector.setdefault(_display_sector(p.get("ticker"), p.get("sector")), []).append(
             (p, sh, cost, price, mv, upnl))
     total_mv = sum(mv or 0 for items in by_sector.values() for *_, mv, _ in items)
 
