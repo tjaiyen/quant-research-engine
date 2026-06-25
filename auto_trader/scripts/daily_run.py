@@ -103,6 +103,17 @@ def run_daily_monitor() -> dict:
         spy_price = float(yf.Ticker("SPY").fast_info["last_price"])
     except Exception:
         pass
+    if not spy_price:
+        # Fall back to the latest cached SPY close so the benchmark line + the
+        # scorecard's paper-vs-SPY don't silently go None when the live fetch fails.
+        try:
+            from utils.db import fetch_prices
+
+            df = fetch_prices("SPY")
+            if df is not None and not df.empty and "adj_close" in df.columns:
+                spy_price = float(df["adj_close"].iloc[-1])
+        except Exception:
+            pass
 
     # Peak must include today's value, else a cold snapshots table (peak=0)
     # yields an absurd drawdown like (0-10000)/1 = -10000 (=-1,000,000%).
