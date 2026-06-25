@@ -395,39 +395,61 @@ def _positions_section(positions: list[dict], names: dict | None = None) -> str:
         inner = ('<div class="empty">No open positions yet — the first paper buys '
                  'land in the monthly 1st–5th window.</div>')
         return _card(_title("\U0001F4BC", "Positions", "positions"), inner)
-    # Compute per-ticker value + P&L on the fly (these aren't stored columns) so
-    # each holding shows its own gain/loss in $ and %. Biggest movers first.
-    computed = []
+    # Compute per-ticker value + P&L (not stored columns), then group by sector
+    # with per-sector subtotals + % of portfolio + a grand total.
+    by_sector: dict = {}
     for p in positions:
-        sh = p.get("shares", p.get("quantity")) or 0.0
-        cost = p.get("avg_cost", p.get("cost_basis", p.get("entry_price"))) or 0.0
+        sh = float(p.get("shares", p.get("quantity")) or 0.0)
+        cost = float(p.get("avg_cost", p.get("cost_basis", p.get("entry_price"))) or 0.0)
         price = p.get("current_price")
         mv = p.get("market_value")
         if mv is None and price is not None:
-            mv = float(sh) * float(price)
+            mv = sh * float(price)
         upnl = p.get("unrealized_pnl")
         if upnl is None and price is not None:
-            upnl = (float(price) - float(cost)) * float(sh)
-        basis = float(cost) * float(sh)
-        pct_chg = (upnl / basis) if (upnl is not None and basis) else None
-        computed.append((p, sh, cost, price, mv, upnl, pct_chg))
-    computed.sort(key=lambda t: (t[5] is None, -(t[5] or 0)))   # gainers → losers
+            upnl = (float(price) - cost) * sh
+        by_sector.setdefault(p.get("sector") or "Other", []).append(
+            (p, sh, cost, price, mv, upnl))
+    total_mv = sum(mv or 0 for items in by_sector.values() for *_, mv, _ in items)
+
+    def _pnl_pct(pnl, basis):
+        return (pnl / basis) if (pnl is not None and basis) else None
+
     rows = []
-    for p, sh, cost, price, mv, upnl, pct_chg in computed:
-        tone = "" if upnl is None else ("pos" if upnl >= 0 else "neg")
+    for sector in sorted(by_sector, key=lambda s: -sum((r[4] or 0) for r in by_sector[s])):
+        items = sorted(by_sector[sector], key=lambda t: (t[5] is None, -(t[5] or 0)))
+        for p, sh, cost, price, mv, upnl in items:
+            tone = "" if upnl is None else ("pos" if upnl >= 0 else "neg")
+            share = (mv / total_mv) if (mv and total_mv) else None
+            rows.append(
+                f"<tr><td>{_ticker(p.get('ticker'), names)}</td>"
+                f"<td>{num(sh, 2)}</td><td>{money(cost)}</td><td>{money(price)}</td>"
+                f"<td>{money(mv) if mv is not None else '—'}</td>"
+                f"<td class='{tone}'>{money(upnl) if upnl is not None else '—'}</td>"
+                f"<td class='{tone}'>{pct(_pnl_pct(upnl, cost*sh)) if upnl is not None else '—'}</td>"
+                f"<td>{pct(share) if share is not None else '—'}</td></tr>")
+        s_mv = sum(r[4] or 0 for r in items)
+        s_pnl = sum(r[5] or 0 for r in items)
+        s_basis = sum(r[2] * r[1] for r in items)
+        st = "pos" if s_pnl >= 0 else "neg"
         rows.append(
-            f"<tr><td>{_ticker(p.get('ticker'), names)}</td>"
-            f"<td>{num(sh, 2)}</td>"
-            f"<td>{money(cost)}</td>"
-            f"<td>{money(price)}</td>"
-            f"<td>{money(mv) if mv is not None else '—'}</td>"
-            f"<td class='{tone}'>{money(upnl) if upnl is not None else '—'}</td>"
-            f"<td class='{tone}'>{pct(pct_chg) if pct_chg is not None else '—'}</td></tr>")
-    body = (f'<table class="tbl"><thead><tr><th>Ticker</th>{_th("shares", "Shares")}'
+            f"<tr class='subtotal'><td colspan='4'>{_esc(sector.replace('_',' '))} "
+            f"<span class='muted'>· {len(items)}</span></td>"
+            f"<td>{money(s_mv)}</td><td class='{st}'>{money(s_pnl)}</td>"
+            f"<td class='{st}'>{pct(_pnl_pct(s_pnl, s_basis))}</td>"
+            f"<td>{pct(s_mv/total_mv) if total_mv else '—'}</td></tr>")
+    g_pnl = sum(r[5] or 0 for items in by_sector.values() for r in items)
+    g_basis = sum(r[2] * r[1] for items in by_sector.values() for r in items)
+    gt = "pos" if g_pnl >= 0 else "neg"
+    rows.append(
+        f"<tr class='grand'><td colspan='4'>TOTAL</td><td>{money(total_mv)}</td>"
+        f"<td class='{gt}'>{money(g_pnl)}</td>"
+        f"<td class='{gt}'>{pct(_pnl_pct(g_pnl, g_basis))}</td><td>100%</td></tr>")
+    body = (f'<table class="tbl"><thead><tr><th>Ticker / Sector</th>{_th("shares", "Shares")}'
             f'{_th("cost_basis", "Cost")}<th>Price</th>{_th("market_value", "Value")}'
             f'{_th("unrealized_pnl", "P&L $")}{_th("unrealized_pnl", "P&L %")}'
-            f'</tr></thead><tbody>{"".join(rows)}</tbody></table>')
-    return _card(_title("\U0001F4BC", "Positions", "positions"), body)
+            f'<th>% Port</th></tr></thead><tbody>{"".join(rows)}</tbody></table>')
+    return _card(_title("\U0001F4BC", "Positions by sector", "positions"), body)
 
 
 def _sentiment_section(rows: list[dict], names: dict | None = None) -> str:
@@ -816,6 +838,10 @@ def dashboard_html(data: dict) -> str:
   .tbl td {{ padding: 7px 8px; border-bottom: 1px solid var(--border-soft); }}
   .tbl tr:last-child td {{ border-bottom: 0; }}
   td.pos {{ color: var(--pos); }} td.neg {{ color: var(--neg); }}
+  .tbl tr.subtotal td {{ font-weight: 640; border-top: 1px solid var(--border);
+    background: var(--inset); }}
+  .tbl tr.grand td {{ font-weight: 700; border-top: 2px solid var(--border);
+    font-size: var(--fs-4); }}
   .chips {{ display: flex; flex-wrap: wrap; gap: var(--sp-2); }}
   .chip {{ background: var(--inset); border: 1px solid var(--border-soft); border-radius: 10px;
     padding: 8px 12px; font-size: var(--fs-2); color: var(--muted); }}

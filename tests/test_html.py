@@ -264,16 +264,23 @@ def test_signal_bar_keys_are_all_defined():
         assert glossary.has(sig), f"signal bar '{sig}' has no glossary entry"
 
 
-def test_positions_show_per_ticker_pnl_computed():
-    # market_value / unrealized_pnl aren't stored columns — must be computed
-    # per ticker (dollar + %), colored, gainers first.
-    pos = [{"ticker": "AAPL", "shares": 1.34, "cost_basis": 295.95, "current_price": 274.73},
-           {"ticker": "JNJ", "shares": 2.135, "cost_basis": 234.2, "current_price": 244.48}]
+def test_positions_grouped_by_sector_with_subtotals_and_total():
+    # Per-ticker P&L ($ + %), grouped by sector with subtotals, a grand total,
+    # and a % Port column — all computed (value/P&L aren't stored columns).
+    pos = [{"ticker": "AAPL", "sector": "Technology", "shares": 1.34,
+            "cost_basis": 295.95, "current_price": 274.73},
+           {"ticker": "JNJ", "sector": "Healthcare", "shares": 2.135,
+            "cost_basis": 234.2, "current_price": 244.48},
+           {"ticker": "MRK", "sector": "Healthcare", "shares": 3.87,
+            "cost_basis": 115.44, "current_price": 123.82}]
     out = html._positions_section(pos)
-    assert "P&amp;L $" in out and "P&amp;L %" in out      # both columns, escaped once
-    assert "class='neg'" in out and "class='pos'" in out  # AAPL down, JNJ up
-    assert out.index("JNJ") < out.index("AAPL")           # biggest gainer first
-    assert "$367.94" in out or "$368" in out.replace(",", "")  # computed market value
+    assert "P&amp;L $" in out and "P&amp;L %" in out and "% Port" in out
+    assert "class='neg'" in out and "class='pos'" in out      # AAPL down, JNJ/MRK up
+    assert "tr class='subtotal'" in out and "Healthcare" in out  # per-sector subtotal
+    assert "tr class='grand'" in out and "TOTAL" in out and "100%" in out
+    assert "$367.94" in out or "$368" in out.replace(",", "")  # AAPL computed value
+    # Healthcare subtotal value = JNJ 521.95 + MRK 479.18 ≈ $1,001
+    assert "$1,001" in out
 
 
 def test_company_names_render_next_to_tickers():
