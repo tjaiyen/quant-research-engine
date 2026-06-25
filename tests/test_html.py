@@ -143,6 +143,15 @@ def test_hierarchy_headline_hero_zones():
     assert "kpi-row1" in out and "kpi-row2" in out and "kpi big" in out  # 2-tier KPIs
 
 
+def test_in_page_nav_and_back_to_top():
+    out = html.dashboard_html(_sample())
+    # primary nav now points to page sections, not just the .md notes
+    for zid in ("equity", "money", "today", "working", "hud"):
+        assert f'href="#{zid}"' in out and f'id="{zid}"' in out
+    assert 'id="toTop"' in out and "IntersectionObserver" in out
+    assert "Obsidian notes" in out                          # outbound notes still reachable
+
+
 def test_empty_zones_drop_no_bare_headers():
     out = html.dashboard_html({"as_of": "x"})              # no working/hud data
     assert 'id="money"' in out                             # KPIs always present

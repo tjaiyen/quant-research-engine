@@ -214,8 +214,9 @@ def _svg_equity(snaps: list[dict], w: int = 760, h: int = 240) -> str:
 </svg>'''
 
 
-def _card(title: str, inner: str, extra_cls: str = "") -> str:
-    return f'<section class="card {extra_cls}"><h2>{title}</h2>{inner}</section>'
+def _card(title: str, inner: str, extra_cls: str = "", cid: str = "") -> str:
+    idattr = f' id="{cid}"' if cid else ""
+    return f'<section class="card {extra_cls}"{idattr}><h2>{title}</h2>{inner}</section>'
 
 
 def _chip(value, label: str, key: str = "", neg: bool = False) -> str:
@@ -450,9 +451,19 @@ def _tournament_section(t: dict) -> str:
                  f'<p class="muted">{_esc(t.get("verdict",""))}</p>{strip}{tbl}')
 
 
+# In-page section anchors (the primary nav) — labels match the zone/section ids.
+_ZONE_NAV = [("equity", "Equity"), ("money", "My money"), ("today", "Today"),
+             ("working", "Is it working?"), ("hud", "Under the hood")]
+
+
 def _nav() -> str:
-    links = "".join(f'<a href="{_esc(href)}">{_esc(label)}</a>' for href, label in _NAV)
-    return f'<nav class="nav">{links}</nav>'
+    jump = "".join(f'<a href="#{zid}" data-jump="{zid}">{_esc(lbl)}</a>'
+                   for zid, lbl in _ZONE_NAV)
+    notes = " · ".join(f'<a href="{_esc(href)}">{_esc(label)}</a>'
+                       for href, label in _NAV[:6])
+    return (f'<nav class="nav" id="topnav"><span class="nav-jump">{jump}</span>'
+            f'<details class="nav-notes"><summary>Obsidian notes ▾</summary>'
+            f'<div class="nav-notes-list">{notes}</div></details></nav>')
 
 
 def _run_banner(lr: dict) -> str:
@@ -543,6 +554,23 @@ _PAGE_JS = r"""(function(){
   document.getElementById('glossX').addEventListener('click',closeGloss);
   gloss.addEventListener('click',function(ev){ if(ev.target===gloss) closeGloss(); });
   search.addEventListener('input',function(){ renderGloss(search.value); });
+  // in-page nav: highlight the section in view + back-to-top
+  var jumps=Array.prototype.slice.call(document.querySelectorAll('.nav-jump a'));
+  var byId={}; jumps.forEach(function(a){ byId[a.dataset.jump]=a; });
+  var targets=jumps.map(function(a){ return document.getElementById(a.dataset.jump); }).filter(Boolean);
+  if('IntersectionObserver' in window && targets.length){
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if(en.isIntersecting){
+        jumps.forEach(function(a){ a.classList.remove('active'); });
+        var a=byId[en.target.id]; if(a) a.classList.add('active'); } });
+    }, {rootMargin:'-45% 0px -50% 0px', threshold:0});
+    targets.forEach(function(t){ io.observe(t); });
+  }
+  var toTop=document.getElementById('toTop');
+  if(toTop){ window.addEventListener('scroll',function(){
+      toTop.classList.toggle('show', window.scrollY>500); }, {passive:true});
+    toTop.addEventListener('click',function(){
+      try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); } }); }
 })();"""
 
 
@@ -624,9 +652,27 @@ def dashboard_html(data: dict) -> str:
   .badge {{ padding: 3px 12px; border-radius: 999px; font-weight: 650; font-size: var(--fs-3);
     text-transform: uppercase; letter-spacing: .04em; color: #0d1117; }}
   .updated {{ margin-left: auto; color: var(--muted); font-size: var(--fs-3); }}
-  .nav {{ display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: var(--sp-5); font-size: var(--fs-3); }}
-  .nav a {{ color: var(--accent); text-decoration: none; }}
-  .nav a:hover {{ text-decoration: underline; }}
+  .nav {{ position: sticky; top: 0; z-index: 40; display: flex; flex-wrap: wrap;
+    align-items: center; gap: 4px 6px; margin: 0 -20px var(--sp-5); padding: 8px 20px;
+    font-size: var(--fs-3); background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(6px); border-bottom: 1px solid var(--border-soft); }}
+  .nav-jump {{ display: flex; flex-wrap: wrap; gap: 4px 4px; }}
+  .nav-jump a {{ color: var(--muted); text-decoration: none; padding: 4px 10px;
+    border-radius: 999px; white-space: nowrap; }}
+  .nav-jump a:hover {{ color: var(--text); background: var(--surface); }}
+  .nav-jump a.active {{ color: var(--accent); background: var(--surface); font-weight: 600; }}
+  .nav-notes {{ margin-left: auto; font-size: var(--fs-2); }}
+  .nav-notes summary {{ cursor: pointer; color: var(--muted2); list-style: none; }}
+  .nav-notes summary::-webkit-details-marker {{ display: none; }}
+  .nav-notes-list {{ position: absolute; right: 20px; margin-top: 6px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; max-width: 80vw;
+    box-shadow: var(--shadow); }}
+  .nav-notes-list a {{ color: var(--accent); text-decoration: none; }}
+  #toTop {{ position: fixed; right: 18px; bottom: 18px; z-index: 45; width: 40px; height: 40px;
+    border-radius: 50%; border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font-size: 18px; cursor: pointer; box-shadow: var(--shadow);
+    opacity: 0; pointer-events: none; transition: opacity .15s; }}
+  #toTop.show {{ opacity: 1; pointer-events: auto; }}
   .runbar {{ border-radius: 10px; padding: 9px 14px; margin-bottom: var(--sp-4); font-size: var(--fs-3);
     border: 1px solid; }}
   .runbar.ok {{ background: #0f2417; border-color: #1f5132; color: #59d27e; }}
@@ -788,7 +834,7 @@ def dashboard_html(data: dict) -> str:
 
   {_card(_title("\U0001F4C8", "Equity curve — strategy vs the market", "equity_curve"),
          _svg_equity(data.get("snapshots") or []) + _equity_caption(data.get("snapshots") or []),
-         extra_cls="hero")}
+         extra_cls="hero", cid="equity")}
 
   {_zone("money", "\U0001F4B0", "My money",
          f'<div class="kpi-row1">{kpis_primary}</div>'
@@ -814,6 +860,7 @@ def dashboard_html(data: dict) -> str:
   <footer>Auto-generated by quant-tracker — do not edit; regenerated each run.
   Paper money, research only — not financial advice. Reloads every {_REFRESH_SECONDS // 60} min.</footer>
 </div>
+<button id="toTop" type="button" aria-label="Back to top" title="Back to top">↑</button>
 <div id="tip" role="tooltip"></div>
 <div id="gloss" role="dialog" aria-modal="true" aria-label="Glossary">
   <div class="panel">
