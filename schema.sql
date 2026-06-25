@@ -236,3 +236,17 @@ CREATE TABLE IF NOT EXISTS company_health (
     floors_total      INTEGER NOT NULL DEFAULT 0,
     updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Phase 21b: per-quarter earnings history — actual vs estimate EPS + surprise.
+-- One row per (ticker, report_date). Sourced from yfinance .get_earnings_dates().
+CREATE TABLE IF NOT EXISTS earnings_history (
+    ticker         TEXT NOT NULL,
+    report_date    TEXT NOT NULL,                      -- ISO date of the earnings report
+    eps_estimate   REAL,
+    eps_actual     REAL,
+    surprise_pct   REAL,                               -- (actual-est)/|est| * 100
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (ticker, report_date)
+);
+CREATE INDEX IF NOT EXISTS idx_earnings_history_ticker
+    ON earnings_history(ticker, report_date DESC);

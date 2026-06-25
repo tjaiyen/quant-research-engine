@@ -501,15 +501,24 @@ def _company_health_section(rows: list[dict], names: dict | None = None) -> str:
         tone = _HEALTH_TONE.get(lbl, "")
         floors = (f" ({r['floors_passed']}/{r['floors_total']})"
                   if r.get("floors_total") else "")
+        surp = r.get("last_surprise_pct")
+        if surp is None:
+            last = "—"
+        else:
+            st = "pos" if surp > 1 else "neg" if surp < -1 else ""
+            tag = "beat" if surp > 1 else "miss" if surp < -1 else "in-line"
+            last = f"<span class='{st}'>{'+' if surp >= 0 else ''}{surp:.1f}% {tag}</span>"
         trs.append(
             f"<tr><td>{_ticker(r.get('ticker'), names)}</td>"
             f"<td class='{tone}'>{_esc(lbl)}{_esc(floors)}</td>"
             f"<td>{pct(r.get('roe')) if r.get('roe') is not None else '—'}</td>"
             f"<td>{num(r.get('debt_to_equity'), 2) if r.get('debt_to_equity') is not None else '—'}</td>"
             f"<td>{num(r.get('pe'), 1) if r.get('pe') is not None else '—'}</td>"
+            f"<td>{last}</td>"
             f"<td>{_esc(r.get('next_earnings') or '—')}</td></tr>")
     body = (f'<table class="tbl"><thead><tr><th>Company</th>{_th("health_score", "Health")}'
             f'{_th("roe", "ROE")}{_th("debt_to_equity", "Debt/Eq")}<th>P/E</th>'
+            f'{_th("earnings_surprise", "Last earnings")}'
             f'{_th("next_earnings", "Next earnings")}</tr></thead>'
             f'<tbody>{"".join(trs)}</tbody></table>')
     return _card(_title("\U0001FA7A", "Company health", "health_score"), body)

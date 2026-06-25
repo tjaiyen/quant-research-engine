@@ -714,6 +714,13 @@ def company_health_note(data: dict) -> str:
         return document(fm, "# 🩺 Company health\n\n_No health data yet — "
                         "`track health` (scores your holdings' fundamentals)._\n")
 
+    def _last_earn(r):
+        e = (r.get("earnings") or [{}])[0]
+        s = e.get("surprise_pct")
+        if s is None:
+            return "—"
+        return f"{'+' if s >= 0 else ''}{s:.1f}% {e.get('verdict', '')}"
+
     def _row(r):
         lbl = r.get("health_label") or "UNAVAILABLE"
         return [
@@ -725,11 +732,25 @@ def company_health_note(data: dict) -> str:
             pct(r.get("operating_margin")) if r.get("operating_margin") is not None else "—",
             num(r.get("debt_to_equity"), 2) if r.get("debt_to_equity") is not None else "—",
             num(r.get("pe"), 1) if r.get("pe") is not None else "—",
+            _last_earn(r),
             r.get("next_earnings") or "—",
         ]
 
-    tbl = table(["Company", "Health", "ROE", "Op margin", "Debt/Eq", "P/E", "Next earnings"],
-                [_row(r) for r in rows])
+    tbl = table(["Company", "Health", "ROE", "Op margin", "Debt/Eq", "P/E",
+                 "Last earnings", "Next earnings"], [_row(r) for r in rows])
+    # Per-company recent-earnings breakdown (last few quarters).
+    detail = ""
+    with_hist = [r for r in rows if r.get("earnings")]
+    if with_hist:
+        blocks = []
+        for r in with_hist:
+            lines = [f"- **{q.get('report_date')}** — actual "
+                     f"{num(q.get('eps_actual'), 2)} vs est {num(q.get('eps_estimate'), 2)} · "
+                     f"{('+' if (q.get('surprise_pct') or 0) >= 0 else '')}"
+                     f"{num(q.get('surprise_pct'), 1)}% {q.get('verdict', '')}"
+                     for q in (r.get("earnings") or [])[:4]]
+            blocks.append(f"**{r.get('ticker')}**\n" + "\n".join(lines))
+        detail = "\n\n## Recent earnings (EPS actual vs estimate)\n\n" + "\n\n".join(blocks) + "\n"
     strong = sum(1 for r in rows if r.get("health_label") == "STRONG")
     weak = sum(1 for r in rows if r.get("health_label") == "WEAK")
     body = (
@@ -739,10 +760,10 @@ def company_health_note(data: dict) -> str:
         f"quality floors (ROE, margins, leverage, liquidity for their sector).\n\n"
         "_Health grades each company's profitability + balance-sheet metrics against "
         "the minimum floors for its sector (🟢 STRONG ≥¾ passed · 🟡 FAIR · 🔴 WEAK · "
-        "⚪ data n/a). Valuation is the trailing P/E; **Next earnings** is the upcoming "
-        "report date. Fundamentals are point-in-time snapshots from a free feed — a "
-        "monitoring aid, not investment advice._\n\n"
-        f"{tbl}\n"
+        "⚪ data n/a). Valuation is the trailing P/E; **Last earnings** is the most "
+        "recent quarter's beat/miss vs the analyst estimate; **Next earnings** is the "
+        "upcoming report date. Free-feed snapshots — a monitoring aid, not advice._\n\n"
+        f"{tbl}\n{detail}"
     )
     return document(fm, body)
 

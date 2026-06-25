@@ -509,6 +509,15 @@ GLOSSARY: dict[str, dict] = {
                 "sharply, so the engine also avoids buying right before it (the earnings blackout).",
         "example": "Earns Jul 23 — expect bigger-than-usual moves around then.",
     },
+    "earnings_surprise": {
+        "plain": "Beat or missed", "term": "earnings surprise",
+        "short": "Did last quarter's actual profit (EPS) come in above (beat) or below (miss) what analysts expected?",
+        "long": "Each quarter a company reports actual earnings per share (EPS) against the analyst estimate. "
+                "The surprise is how far off the estimate it landed: above = a 'beat' (🟢), below = a 'miss' "
+                "(🔴), roughly on = in-line. A run of beats signals momentum; misses, trouble.",
+        "example": "EPS $3.66 vs $3.50 expected → +4.7% beat 🟢.",
+        "theory": "Stocks often drift in the direction of an earnings surprise for weeks after the report.",
+    },
 }
 
 

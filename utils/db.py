@@ -303,6 +303,31 @@ def list_health() -> list[dict]:
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
+def upsert_earnings_history(ticker: str, rows: list[dict]) -> None:
+    """Replace a ticker's earnings history with `rows` (each: report_date,
+    eps_estimate, eps_actual, surprise_pct). Idempotent per (ticker, date)."""
+    t = ticker.upper()
+    with get_conn() as conn:
+        conn.execute("DELETE FROM earnings_history WHERE ticker = ?", (t,))
+        conn.executemany(
+            "INSERT INTO earnings_history(ticker, report_date, eps_estimate, "
+            "eps_actual, surprise_pct, updated_at) VALUES(?,?,?,?,?, datetime('now'))",
+            [(t, r.get("report_date"), r.get("eps_estimate"), r.get("eps_actual"),
+              r.get("surprise_pct")) for r in rows if r.get("report_date")],
+        )
+
+
+def fetch_earnings_history(ticker: str, limit: int = 8) -> list[dict]:
+    """A ticker's recent earnings (most recent first)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "SELECT report_date, eps_estimate, eps_actual, surprise_pct "
+            "FROM earnings_history WHERE ticker = ? ORDER BY report_date DESC LIMIT ?",
+            (ticker.upper(), int(limit)))
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
 # ---------- Ticker status (Upgrade U9) ----------
 
 def ticker_status(ticker: str) -> tuple[str | None, str | None]:

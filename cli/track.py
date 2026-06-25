@@ -266,8 +266,8 @@ def cmd_health(args: argparse.Namespace) -> int:
     from render import notes
     from render.markdown import atomic_write, tracker_dir
     from tasks import refresh_health
-    from utils.db import (fetch_earnings, fetch_latest_fundamentals, list_health,
-                          ticker_names)
+    from utils.db import (fetch_earnings, fetch_earnings_history,
+                          fetch_latest_fundamentals, list_health, ticker_names)
 
     extra: list[str] = list(args.tickers or [])
     if args.universe:
@@ -281,9 +281,12 @@ def cmd_health(args: argparse.Namespace) -> int:
     for h in list_health():
         t = h["ticker"]
         fund = fetch_latest_fundamentals(t) or {}
+        hist = fetch_earnings_history(t, limit=4)
+        last = hist[0] if hist else {}
         rows.append({**h, "name": names.get(t), "pe": fund.get("pe"),
                      "peg": fund.get("peg"), "div_yield": fund.get("div_yield"),
-                     "next_earnings": fetch_earnings(t)})
+                     "next_earnings": fetch_earnings(t), "earnings": hist,
+                     "last_surprise_pct": last.get("surprise_pct")})
     data = {"as_of": datetime.now(timezone.utc).isoformat(), "rows": rows}
     atomic_write(tracker_dir() / "CompanyHealth.md", notes.company_health_note(data))
     print(f"Company-health note written → {tracker_dir()}/CompanyHealth.md "

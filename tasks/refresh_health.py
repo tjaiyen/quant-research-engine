@@ -15,8 +15,9 @@ import argparse
 import sys
 import time
 
+from screener.health.earnings import fetch_earnings_history
 from screener.health.scorer import score_ticker_health
-from utils.db import init_db, upsert_health
+from utils.db import init_db, upsert_earnings_history, upsert_health
 from utils.logging_setup import get_logger
 
 log = get_logger(__name__)
@@ -72,6 +73,12 @@ def main(argv: list[str] | None = None) -> int:
                 unavailable += 1
             else:
                 ok += 1
+            try:                              # earnings history — best-effort
+                hist = fetch_earnings_history(sym, limit=8)
+                if hist:
+                    upsert_earnings_history(sym, hist)
+            except Exception as exc:
+                log.debug("  %s: earnings history skipped (%s)", sym, exc)
             log.info("  %s: %s (%s, %d/%d floors)", sym, snap["health_label"],
                      snap["health_score"], snap["floors_passed"], snap["floors_total"])
         except Exception as exc:
