@@ -224,9 +224,15 @@ def test_gate10_sector_key_alignment():
         f"Mismatch! Missing: {config - sectors} | Extra: {sectors - config}"
     )
     for sector in sectors:
-        assert len(holdings[sector]) == STOCKS_PER_SECTOR, (
-            f"{sector}: {len(holdings[sector])} tickers, expected {STOCKS_PER_SECTOR}"
+        # ≤ cap, not ==: a sector may carry fewer after dual-class dedup
+        # (Communications dropped GOOG/FOX/NWS — see the dedup change).
+        assert 0 < len(holdings[sector]) <= STOCKS_PER_SECTOR, (
+            f"{sector}: {len(holdings[sector])} tickers, expected 1..{STOCKS_PER_SECTOR}"
         )
+    # No dual-class duplicates re-creep in (same company, two share classes).
+    allt = [t for s in sectors for t in holdings[s]]
+    for redundant in ("GOOG", "FOX", "NWS"):
+        assert redundant not in allt, f"dual-class duplicate back in universe: {redundant}"
 
 
 # ---------------------------------------------------------------------------

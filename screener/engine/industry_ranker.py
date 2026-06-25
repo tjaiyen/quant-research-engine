@@ -365,8 +365,11 @@ def rank_all_sectors(regime_data: dict) -> dict[str, dict]:
     results: dict[str, dict] = {}
     items = list(sectors.items())
     for i, (sector, tickers) in enumerate(items):
-        assert len(tickers) == STOCKS_PER_SECTOR, (
-            f"{sector}: {len(tickers)} tickers, expected {STOCKS_PER_SECTOR}"
+        # A sector may carry FEWER than STOCKS_PER_SECTOR after dual-class dedup
+        # (e.g. Communications drops GOOG/FOX/NWS); guard the real failure modes
+        # (empty, or somehow oversized) rather than an exact count.
+        assert 0 < len(tickers) <= STOCKS_PER_SECTOR, (
+            f"{sector}: {len(tickers)} tickers, expected 1..{STOCKS_PER_SECTOR}"
         )
         logger.info("[%d/%d] %s (%d stocks)…", i + 1, len(items), sector, len(tickers))
         results[sector] = rank_industry(sector, tickers, regime_data)

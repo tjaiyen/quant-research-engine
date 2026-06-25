@@ -63,8 +63,8 @@
     "IRM",  "INVH", "VTR",  "MAA"
   ],
   "Communications": [
-    "META", "GOOGL","GOOG", "NFLX", "TMUS", "VZ",   "T",    "DIS",
-    "CMCSA","CHTR", "EA",   "TTWO", "WBD",  "OMC",  "ROKU", "NWS",
-    "NWSA", "FOXA", "FOX",  "MTCH"
+    "META", "GOOGL", "NFLX", "TMUS", "VZ",   "T",    "DIS",
+    "CMCSA","CHTR", "EA",   "TTWO", "WBD",  "OMC",  "ROKU",
+    "NWSA", "FOXA", "MTCH"
   ]
 }
