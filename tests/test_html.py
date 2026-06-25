@@ -143,6 +143,29 @@ def test_hierarchy_headline_hero_zones():
     assert "kpi-row1" in out and "kpi-row2" in out and "kpi big" in out  # 2-tier KPIs
 
 
+def test_visual_charts_render():
+    from render import html as h
+    # bar/donut helpers emit valid markup and survive empty input
+    assert h._diverging_bars([("a", 0.06, "+6%"), ("b", -0.12, "-12%")]).count("db-fill") == 2
+    assert "pos" in h._diverging_bars([("a", 0.06, "x")]) and "neg" in h._diverging_bars([("b", -0.1, "x")])
+    assert h._diverging_bars([]) == "" and h._hbars([]) == "" and h._svg_donut([]) == ""
+    assert "<svg" in h._svg_donut([("Tech", 5), ("Health", 3)]) and "stroke-dasharray" in h._svg_donut([("Tech", 5)])
+    assert "hb-fill ctl" in h._hbars([("SPY", 0.2, "+20%", "ctl")])
+
+
+def test_charts_wired_into_sections():
+    d = _sample()
+    d["signal_lab"] = {"signals": {"arima": {"ic": 0.06, "verdict": "KEEP"},
+                                   "monte_carlo": {"ic": -0.12, "verdict": "DROP"}}}
+    d["tournament"] = {"verdict": "ok", "beat_spy": 0.05, "beat_random": 0.04, "oos_rank": 2,
+                       "leaderboard": [{"rank": 1, "label": "Pure Sharpe", "group": "weighting",
+                                        "total": 0.31, "sharpe": 1.2, "excess": 0.05}]}
+    out = html.dashboard_html(d)
+    assert 'class="dbars"' in out          # signal-lab diverging IC bars
+    assert 'class="hbars"' in out          # tournament return bars
+    assert 'class="donut"' in out          # sector allocation donut
+
+
 def test_in_page_nav_and_back_to_top():
     out = html.dashboard_html(_sample())
     # primary nav now points to page sections, not just the .md notes

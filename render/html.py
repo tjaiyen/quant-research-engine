@@ -214,6 +214,72 @@ def _svg_equity(snaps: list[dict], w: int = 760, h: int = 240) -> str:
 </svg>'''
 
 
+# ── visual encoding: hand-rolled bars/donut (no libraries) ───────────────────
+# HTML bars use CSS var() so they theme with light/dark; the donut uses inline
+# SVG with categorical hues (readable on both themes).
+def _diverging_bars(rows: list[tuple]) -> str:
+    """Zero-centred bars: negative grows left (red), positive right (green).
+    rows = [(label_html, value, right_html)]; value scaled by the max magnitude."""
+    rows = [r for r in rows if r[1] is not None]
+    if not rows:
+        return ""
+    mx = max(abs(v) for _, v, _ in rows) or 1.0
+    out = []
+    for lbl, v, right in rows:
+        w = min(50.0, abs(v) / mx * 50.0)
+        fill = (f'<i class="db-fill pos" style="left:50%;width:{w:.1f}%"></i>' if v >= 0
+                else f'<i class="db-fill neg" style="right:50%;width:{w:.1f}%"></i>')
+        out.append(f'<div class="db-row"><span class="db-lbl">{lbl}</span>'
+                   f'<span class="db-track"><i class="db-zero"></i>{fill}</span>'
+                   f'<span class="db-val">{right}</span></div>')
+    return f'<div class="dbars">{"".join(out)}</div>'
+
+
+def _hbars(rows: list[tuple]) -> str:
+    """Left-anchored horizontal bars. rows = [(label_html, value, text, tone)]."""
+    rows = [r for r in rows if r[1] is not None]
+    if not rows:
+        return ""
+    mx = max(abs(v) for _, v, _, _ in rows) or 1.0
+    out = []
+    for lbl, v, txt, tone in rows:
+        w = min(100.0, abs(v) / mx * 100.0)
+        out.append(f'<div class="hb-row"><span class="hb-lbl">{lbl}</span>'
+                   f'<span class="hb-track"><i class="hb-fill {tone}" '
+                   f'style="width:{w:.1f}%"></i></span>'
+                   f'<span class="hb-val {tone}">{_esc(txt)}</span></div>')
+    return f'<div class="hbars">{"".join(out)}</div>'
+
+
+_DONUT_HUES = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#a371f7",
+               "#39c5cf", "#ec6547", "#db61a2", "#8b949e", "#e3b341"]
+
+
+def _svg_donut(parts: list[tuple], size: int = 150) -> str:
+    """Ring chart from [(label, value)] using proportional stroke-dasharray arcs."""
+    parts = [(l, float(v)) for l, v in parts if v and float(v) > 0]
+    if not parts:
+        return ""
+    tot = sum(v for _, v in parts)
+    r = size / 2.0
+    sw = size * 0.17
+    rad = r - sw / 2.0
+    off, segs, legend = 0.0, [], []
+    for i, (l, v) in enumerate(parts):
+        frac = v / tot * 100.0
+        c = _DONUT_HUES[i % len(_DONUT_HUES)]
+        segs.append(
+            f'<circle cx="{r}" cy="{r}" r="{rad:.1f}" fill="none" stroke="{c}" '
+            f'stroke-width="{sw:.1f}" pathLength="100" stroke-dasharray="{frac:.2f} 100" '
+            f'stroke-dashoffset="{-off:.2f}" transform="rotate(-90 {r} {r})"/>')
+        legend.append(f'<span class="lg"><i style="background:{c}"></i>'
+                      f'{_esc(str(l).replace("_", " "))} <b>{frac:.0f}%</b></span>')
+        off += frac
+    return (f'<div class="donut-wrap"><svg viewBox="0 0 {size} {size}" class="donut" '
+            f'width="{size}" height="{size}" role="img" aria-label="Allocation by sector">'
+            f'{"".join(segs)}</svg><div class="donut-lg">{"".join(legend)}</div></div>')
+
+
 def _card(title: str, inner: str, extra_cls: str = "", cid: str = "") -> str:
     idattr = f' id="{cid}"' if cid else ""
     return f'<section class="card {extra_cls}"{idattr}><h2>{title}</h2>{inner}</section>'
@@ -264,19 +330,24 @@ def _sector_table(sectors: dict, names: dict | None = None) -> str:
     if not sectors:
         return ""
     rows = []
+    rows, donut_parts = [], []
     for name, stocks in sectors.items():
         stocks = stocks or []
         passed = sum(1 for s in stocks if s.get("passed_veto"))
+        if passed:
+            donut_parts.append((name, passed))
         top = next((s for s in stocks if s.get("rank") == 1), stocks[0] if stocks else {})
         rows.append(
             f"<tr><td>{_esc(name.replace('_', ' '))}</td>"
             f"<td>{_ticker(top.get('ticker', '—'), names)}</td>"
             f"<td>{num(top.get('composite_score'), 3) if top.get('composite_score') is not None else '—'}</td>"
             f"<td>{passed}/{len(stocks)}</td></tr>")
+    donut = (f'<p class="muted">Candidates passing the safety checks {_ibtn("veto")}, '
+             f'by sector:</p>{_svg_donut(donut_parts)}' if donut_parts else "")
     body = (f'<table class="tbl"><thead><tr>{_th("sector", "Sector")}'
             f'<th>Top pick</th>{_th("composite", "Score")}'
             f'{_th("veto", "Passed")}</tr></thead><tbody>{"".join(rows)}</tbody></table>')
-    return _card(_title("\U0001F3E2", "By sector", "sector"), body)
+    return _card(_title("\U0001F3E2", "By sector", "sector"), donut + body)
 
 
 def _veto_key(reason: str) -> str:
@@ -403,17 +474,16 @@ def _signal_lab_section(sl: dict) -> str:
     sigs = sl.get("signals") or {}
     if not sigs:
         return ""
-    rows = []
+    bar_rows = []
     for s, d in sorted(sigs.items(), key=lambda kv: -(kv[1].get("ic") or -9)):
         ic = d.get("ic")
-        tone = "pos" if (ic or 0) > 0.02 else "neg" if (ic or 0) < -0.02 else ""
         plain = _gloss.GLOSSARY.get(s, {}).get("plain")
-        name = (f"<strong>{_esc(plain)}</strong> {_ibtn(s)}" if plain
-                else f"<strong>{_esc(s)}</strong>")
-        rows.append(f"<tr><td>{name}</td>"
-                    f"<td class='{tone}'>{pct(ic)}</td><td>{_esc(d.get('verdict'))}</td></tr>")
-    tbl = (f'<table class="tbl"><thead><tr><th>Signal</th>{_th("ic", "IC")}'
-           f'{_th("verdict", "Verdict")}</tr></thead><tbody>{"".join(rows)}</tbody></table>')
+        name = (f"{_esc(plain)} {_ibtn(s)}" if plain else _esc(s))
+        right = f'{pct(ic)} · {_esc(d.get("verdict", "")[:18])}'
+        bar_rows.append((name, ic, right))
+    tbl = (f'<p class="muted">Prediction accuracy {_ibtn("ic")} per signal — '
+           f'bars left of centre predict <b>backwards</b>, right predict forwards.</p>'
+           + _diverging_bars(bar_rows))
     val = sl.get("validation") or {}
     strip = ""
     if val.get("candidate_oos") is not None:
@@ -440,6 +510,13 @@ def _tournament_section(t: dict) -> str:
             f"<td class='{tone}'>{pct(tot)}</td>"
             f"<td>{num(r.get('sharpe'), 2) if r.get('sharpe') is not None else '—'}</td>"
             f"<td>{pct(r.get('excess'))}</td></tr>")
+    bar_rows = []
+    for r in board[:12]:
+        tot = r.get("total")
+        tone = "ctl" if r.get("group") == "control" else ("pos" if (tot or 0) >= 0 else "neg")
+        lbl = f'{_esc(r.get("label"))} {_ibtn(_gloss.strategy_key(r.get("label")))}'
+        bar_rows.append((lbl, tot, pct(tot), tone))
+    bars = _hbars(bar_rows)
     tbl = (f'<table class="tbl"><thead><tr><th>#</th><th>Strategy</th>'
            f'{_th("excess", "Total")}{_th("sharpe", "Sharpe")}'
            f'{_th("excess", "vs SPY")}</tr></thead><tbody>{"".join(rows)}</tbody></table>')
@@ -448,7 +525,8 @@ def _tournament_section(t: dict) -> str:
              f'<strong>{pct(t.get("beat_random"))}</strong> · fresh-data rank {_ibtn("out_of_sample")} '
              f'{_esc(t.get("oos_rank","—"))}</p>')
     return _card(_title("\U0001F3C6", "Strategy tournament", "tournament"),
-                 f'<p class="muted">{_esc(t.get("verdict",""))}</p>{strip}{tbl}')
+                 f'<p class="muted">{_esc(t.get("verdict",""))}</p>{strip}{bars}'
+                 f'<details class="more-tbl"><summary>Full leaderboard table</summary>{tbl}</details>')
 
 
 # In-page section anchors (the primary nav) — labels match the zone/section ids.
@@ -733,6 +811,35 @@ def dashboard_html(data: dict) -> str:
   .feed li:last-child {{ border-bottom: 0; }}
   .chart {{ width: 100%; height: auto; }}
   .chart .axis {{ fill: var(--muted2); font-size: var(--fs-1); }}
+  /* diverging + horizontal bars (theme-aware via var()) */
+  .dbars, .hbars {{ display: grid; gap: 6px; margin: 4px 0 2px; }}
+  .db-row {{ display: grid; grid-template-columns: minmax(96px,1.2fr) 1fr 92px;
+    align-items: center; gap: 10px; }}
+  .db-lbl {{ font-size: var(--fs-2); color: var(--text); display: flex; align-items: center; }}
+  .db-track {{ position: relative; height: 10px; background: var(--inset); border-radius: 5px; }}
+  .db-zero {{ position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--border); }}
+  .db-fill {{ position: absolute; top: 0; height: 100%; border-radius: 5px; }}
+  .db-fill.pos {{ background: var(--pos); }} .db-fill.neg {{ background: var(--neg); }}
+  .db-val {{ font-size: var(--fs-2); text-align: right; color: var(--muted);
+    font-variant-numeric: tabular-nums; }}
+  .hb-row {{ display: grid; grid-template-columns: minmax(120px,1.4fr) 1fr 64px;
+    align-items: center; gap: 10px; }}
+  .hb-lbl {{ font-size: var(--fs-2); color: var(--text); display: flex; align-items: center; }}
+  .hb-track {{ position: relative; height: 12px; background: var(--inset); border-radius: 6px; overflow: hidden; }}
+  .hb-fill {{ display: block; height: 100%; background: var(--accent); border-radius: 6px; }}
+  .hb-fill.pos {{ background: var(--pos); }} .hb-fill.neg {{ background: var(--neg); }}
+  .hb-fill.ctl {{ background: var(--muted2); }}
+  .hb-val {{ font-size: var(--fs-2); text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }}
+  .hb-val.pos {{ color: var(--pos); }} .hb-val.neg {{ color: var(--neg); }}
+  /* donut */
+  .donut-wrap {{ display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 4px; }}
+  .donut {{ flex: 0 0 auto; }}
+  .donut-lg {{ display: grid; grid-template-columns: 1fr 1fr; gap: 3px 16px; font-size: var(--fs-2); color: var(--muted); }}
+  .donut-lg .lg {{ display: flex; align-items: center; gap: 6px; }}
+  .donut-lg .lg i {{ width: 9px; height: 9px; border-radius: 2px; flex: 0 0 auto; }}
+  .donut-lg .lg b {{ color: var(--text); font-weight: 600; }}
+  .more-tbl {{ margin-top: var(--sp-2); }}
+  .more-tbl summary {{ cursor: pointer; color: var(--accent); font-size: var(--fs-2); }}
   .empty {{ color: var(--muted2); font-size: 14px; padding: var(--sp-3) 0; }}
   .copilot p {{ font-size: 14.5px; }}
   footer {{ color: var(--muted2); font-size: var(--fs-2); margin-top: var(--sp-6);
