@@ -47,7 +47,7 @@ def test_dashboard_html_is_wellformed():
     # comprehensive sections
     assert "Screener" in out and "220" in out         # screener stats
     assert "By sector" in out and "Healthcare" in out  # sector table
-    assert "monte carlo" in out                        # signal breakdown bars
+    assert 'data-term="monte_carlo"' in out            # signal breakdown bars (plain-labelled)
     assert "EARNINGS_BLACKOUT" in out                  # veto reasons
     assert "Positions" in out                          # positions section (empty ok)
     assert "News sentiment" in out                     # sentiment section
@@ -103,3 +103,52 @@ def test_dashboard_html_escapes_injection():
     assert "<script>x</script>" not in out
     assert "<b>HACK</b>" not in out
     assert "&lt;b&gt;HACK&lt;/b&gt;" in out
+
+
+# ── educational / interactive layer ──────────────────────────────────────────
+
+def test_educational_affordances_present():
+    out = html.dashboard_html(_sample())
+    assert 'id="learnBtn"' in out                       # 🎓 Learn-mode toggle
+    assert 'id="gloss"' in out and 'id="glossSearch"' in out   # searchable glossary modal
+    assert 'id="tip"' in out                             # tooltip/popover element
+    assert 'id="intro"' in out                           # onboarding card
+    assert out.count('class="i"') > 20                   # many info buttons wired
+    assert "localStorage" in out and "Learn mode" in out  # client JS + label
+    assert "__GLOSSARY_JSON__" not in out                # placeholder substituted
+    assert '"plain"' in out                              # glossary embedded for JS
+
+
+def test_dashboard_stays_offline_self_contained():
+    # No external libraries/CDNs/URLs — must open offline from the Drive vault.
+    out = html.dashboard_html(_sample())
+    assert "http://" not in out and "https://" not in out
+    assert "<script src" not in out and "cdn" not in out.lower()
+    assert "<link" not in out                            # no external stylesheet
+
+
+def test_every_rendered_term_has_a_definition():
+    """Completeness gate: no metric ships a `?` without a glossary entry."""
+    import re
+    from render import glossary
+    d = _sample()
+    d["tournament"] = {"verdict": "ok", "beat_spy": 0.05, "beat_random": 0.04,
+                       "oos_rank": 2, "leaderboard": [{"rank": 1, "label": "X",
+                       "group": "weighting", "total": 0.3, "sharpe": 1.1, "excess": 0.05}]}
+    d["signal_lab"] = {"signals": {"arima": {"ic": 0.06, "verdict": "KEEP"}},
+                       "validation": {"candidate_oos": 0.18, "default_oos": 0.12,
+                                      "spy_oos": 0.12, "n_oos": 3}}
+    d["last_run"] = {"job": "weekly", "ended": "x", "status": "ok"}
+    out = html.dashboard_html(d)
+    used = set(re.findall(r'data-term="([^"]+)"', out))
+    assert used, "expected info buttons in the output"
+    missing = used - set(glossary.KEYS)
+    assert not missing, f"info buttons reference undefined glossary keys: {missing}"
+
+
+def test_required_concepts_are_defined():
+    # Coverage floor: the core concepts a reader will hit must always be defined.
+    from render import glossary
+    for key in ("regime", "composite", "veto", "ic", "sharpe", "dsr", "cpcv",
+                "alpha", "drawdown", "out_of_sample", "momentum", "unrealized_pnl"):
+        assert glossary.has(key), f"missing core glossary term: {key}"
