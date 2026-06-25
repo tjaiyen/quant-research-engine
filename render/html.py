@@ -471,6 +471,15 @@ _PAGE_JS = r"""(function(){
     try{ localStorage.setItem('qt_learn',on?'1':'0'); }catch(e){} }
   lb.addEventListener('click',function(){ setLearn(!document.body.classList.contains('learn')); });
   try{ if(localStorage.getItem('qt_learn')==='1') setLearn(true); }catch(e){}
+  // theme: stored pref wins; otherwise follow the OS preference. Default dark.
+  var tb=document.getElementById('themeBtn');
+  function setTheme(light){ document.body.classList.toggle('light',light);
+    if(tb) tb.textContent=(light?'☀️ Theme':'🌙 Theme');
+    try{ localStorage.setItem('qt_theme',light?'light':'dark'); }catch(e){} }
+  (function(){ var pref=null; try{ pref=localStorage.getItem('qt_theme'); }catch(e){}
+    if(pref==='light') setTheme(true);
+    else if(!pref && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) setTheme(true); })();
+  if(tb) tb.addEventListener('click',function(){ setTheme(!document.body.classList.contains('light')); });
   var intro=document.getElementById('intro'), introX=document.getElementById('introX');
   try{ if(localStorage.getItem('qt_intro')==='0' && intro) intro.hidden=true; }catch(e){}
   if(introX) introX.addEventListener('click',function(){ intro.hidden=true;
@@ -544,130 +553,152 @@ def dashboard_html(data: dict) -> str:
 <meta http-equiv="refresh" content="{_REFRESH_SECONDS}">
 <title>Quant Tracker — Dashboard</title>
 <style>
-  :root {{ color-scheme: dark; }}
+  /* ── design tokens (dark = default, tuned) ── */
+  :root {{
+    --bg: #0d1117; --surface: #161b22; --surface2: #0d1117; --inset: #0d1117;
+    --border: #2b313a; --border-soft: #21262d; --text: #e6edf3; --text2: #c9d1d9;
+    --muted: #8b949e; --muted2: #6e7681; --pos: #3fb950; --neg: #f85149;
+    --accent: #58a6ff; --accent2: #79c0ff; --bar: #388bfd;
+    --shadow: 0 1px 2px #0007, 0 6px 20px #0004;
+    --fs-1: 11px; --fs-2: 12px; --fs-3: 13px; --fs-4: 15px; --fs-5: 17px;
+    --fs-6: 22px; --fs-kpi: 24px;
+    --sp-1: 6px; --sp-2: 10px; --sp-3: 14px; --sp-4: 18px; --sp-5: 22px; --sp-6: 28px;
+    color-scheme: dark;
+  }}
+  body.light {{
+    --bg: #f6f8fa; --surface: #ffffff; --surface2: #f0f3f6; --inset: #f0f3f6;
+    --border: #d0d7de; --border-soft: #e4e8ec; --text: #1f2328; --text2: #32383f;
+    --muted: #59636e; --muted2: #7a828b; --pos: #1a7f37; --neg: #cf222e;
+    --accent: #0969da; --accent2: #0a5cc5; --bar: #1f6feb;
+    --shadow: 0 1px 2px #0000001a, 0 6px 18px #0000001f;
+    color-scheme: light;
+  }}
   * {{ box-sizing: border-box; }}
-  body {{ margin: 0; background: #0d1117; color: #e6edf3;
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }}
+  body {{ margin: 0; background: var(--bg); color: var(--text);
+    font: var(--fs-4)/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }}
   .wrap {{ max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; }}
-  header {{ display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    border-bottom: 1px solid #21262d; padding-bottom: 16px; margin-bottom: 18px; }}
-  header h1 {{ font-size: 22px; margin: 0; font-weight: 650; }}
-  .badge {{ padding: 3px 12px; border-radius: 999px; font-weight: 650; font-size: 13px;
+  header {{ display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+    border-bottom: 1px solid var(--border-soft); padding-bottom: var(--sp-3); margin-bottom: var(--sp-4); }}
+  header h1 {{ font-size: var(--fs-6); margin: 0; font-weight: 650; }}
+  .badge {{ padding: 3px 12px; border-radius: 999px; font-weight: 650; font-size: var(--fs-3);
     text-transform: uppercase; letter-spacing: .04em; color: #0d1117; }}
-  .updated {{ margin-left: auto; color: #8b949e; font-size: 13px; }}
-  .nav {{ display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 22px; font-size: 13px; }}
-  .nav a {{ color: #58a6ff; text-decoration: none; }}
+  .updated {{ margin-left: auto; color: var(--muted); font-size: var(--fs-3); }}
+  .nav {{ display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: var(--sp-5); font-size: var(--fs-3); }}
+  .nav a {{ color: var(--accent); text-decoration: none; }}
   .nav a:hover {{ text-decoration: underline; }}
-  .runbar {{ border-radius: 10px; padding: 9px 14px; margin-bottom: 18px; font-size: 13px;
+  .runbar {{ border-radius: 10px; padding: 9px 14px; margin-bottom: var(--sp-4); font-size: var(--fs-3);
     border: 1px solid; }}
   .runbar.ok {{ background: #0f2417; border-color: #1f5132; color: #59d27e; }}
   .runbar.fail {{ background: #2d1213; border-color: #6e2528; color: #ff7b72; }}
   .runbar.warn {{ background: #2b2412; border-color: #6b5722; color: #e3b341; }}
   .runbar code {{ font-family: ui-monospace, monospace; }}
-  .grid {{ display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 22px; }}
-  .kpi {{ background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 14px; }}
-  .kpi-label {{ color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }}
-  .kpi-val {{ font-size: 21px; font-weight: 680; margin-top: 4px; }}
-  .kpi-sub {{ color: #6e7681; font-size: 11px; margin-top: 2px; }}
-  .kpi.pos .kpi-val {{ color: #3fb950; }} .kpi.neg .kpi-val {{ color: #f85149; }}
-  .cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }}
-  .card {{ background: #161b22; border: 1px solid #21262d; border-radius: 12px;
-    padding: 18px 20px; margin-bottom: 18px; }}
-  .card h2 {{ font-size: 15px; margin: 0 0 12px; font-weight: 640; }}
+  .grid {{ display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--sp-3); margin-bottom: var(--sp-5); }}
+  .kpi {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: var(--sp-3); box-shadow: var(--shadow); }}
+  .kpi-label {{ color: var(--muted); font-size: var(--fs-1); text-transform: uppercase; letter-spacing: .04em; }}
+  .kpi-val {{ font-size: var(--fs-kpi); font-weight: 680; margin-top: 4px; }}
+  .kpi-sub {{ color: var(--muted2); font-size: var(--fs-1); margin-top: 2px; }}
+  .kpi.pos .kpi-val {{ color: var(--pos); }} .kpi.neg .kpi-val {{ color: var(--neg); }}
+  .cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }}
+  .card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: var(--sp-4) 20px; margin-bottom: var(--sp-4); box-shadow: var(--shadow); }}
+  .card h2 {{ font-size: var(--fs-5); margin: 0 0 var(--sp-3); font-weight: 640; }}
   .card h2 .muted {{ font-weight: 400; }}
-  .muted {{ color: #8b949e; font-size: 13px; margin: 0 0 10px; }}
+  .muted {{ color: var(--muted); font-size: var(--fs-3); margin: 0 0 var(--sp-2); }}
   table.tbl {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
-  .tbl th {{ text-align: left; color: #8b949e; font-weight: 550; font-size: 12px;
-    text-transform: uppercase; letter-spacing: .03em; padding: 6px 8px; border-bottom: 1px solid #21262d; }}
-  .tbl td {{ padding: 7px 8px; border-bottom: 1px solid #1c2129; }}
+  .tbl th {{ text-align: left; color: var(--muted); font-weight: 550; font-size: var(--fs-2);
+    text-transform: uppercase; letter-spacing: .03em; padding: 6px 8px; border-bottom: 1px solid var(--border-soft); }}
+  .tbl td {{ padding: 7px 8px; border-bottom: 1px solid var(--border-soft); }}
   .tbl tr:last-child td {{ border-bottom: 0; }}
-  td.pos {{ color: #3fb950; }} td.neg {{ color: #f85149; }}
-  .chips {{ display: flex; flex-wrap: wrap; gap: 10px; }}
-  .chip {{ background: #0d1117; border: 1px solid #21262d; border-radius: 10px;
-    padding: 8px 12px; font-size: 12px; color: #8b949e; }}
-  .chip span {{ display: block; font-size: 19px; font-weight: 680; color: #e6edf3; }}
-  .chip.neg span {{ color: #f85149; }}
-  .pick {{ padding: 10px 0; border-bottom: 1px solid #1c2129; }}
+  td.pos {{ color: var(--pos); }} td.neg {{ color: var(--neg); }}
+  .chips {{ display: flex; flex-wrap: wrap; gap: var(--sp-2); }}
+  .chip {{ background: var(--inset); border: 1px solid var(--border-soft); border-radius: 10px;
+    padding: 8px 12px; font-size: var(--fs-2); color: var(--muted); }}
+  .chip span {{ display: block; font-size: 19px; font-weight: 680; color: var(--text); }}
+  .chip.neg span {{ color: var(--neg); }}
+  .pick {{ padding: var(--sp-2) 0; border-bottom: 1px solid var(--border-soft); }}
   .pick:last-child {{ border-bottom: 0; }}
-  .pick-hd {{ display: flex; align-items: baseline; gap: 10px; }}
-  .pick-sec {{ color: #8b949e; font-size: 12px; }}
-  .coname {{ color: #8b949e; font-weight: 400; font-size: 12px; }}
-  .pick-score {{ margin-left: auto; font-variant-numeric: tabular-nums; color: #3fb950; font-weight: 640; }}
+  .pick-hd {{ display: flex; align-items: baseline; gap: var(--sp-2); }}
+  .pick-sec {{ color: var(--muted); font-size: var(--fs-2); }}
+  .coname {{ color: var(--muted); font-weight: 400; font-size: var(--fs-2); }}
+  .pick-score {{ margin-left: auto; font-variant-numeric: tabular-nums; color: var(--pos); font-weight: 640; }}
   .sigs {{ margin-top: 7px; display: grid; gap: 3px; }}
-  .sigrow {{ display: grid; grid-template-columns: 78px 1fr 36px; align-items: center; gap: 8px; }}
-  .siglbl {{ color: #6e7681; font-size: 11px; }}
-  .sigbar {{ background: #0d1117; border-radius: 4px; height: 7px; overflow: hidden; }}
-  .sigbar i {{ display: block; height: 100%; background: #388bfd; }}
-  .sigval {{ color: #8b949e; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }}
+  .sigrow {{ display: grid; grid-template-columns: 90px 1fr 36px; align-items: center; gap: 8px; }}
+  .siglbl {{ color: var(--muted2); font-size: var(--fs-1); }}
+  .sigbar {{ background: var(--inset); border-radius: 4px; height: 7px; overflow: hidden; }}
+  .sigbar i {{ display: block; height: 100%; background: var(--bar); }}
+  .sigval {{ color: var(--muted); font-size: var(--fs-1); text-align: right; font-variant-numeric: tabular-nums; }}
   .feed {{ list-style: none; margin: 0; padding: 0; }}
-  .feed li {{ padding: 9px 0; border-bottom: 1px solid #1c2129; font-size: 14px; }}
+  .feed li {{ padding: 9px 0; border-bottom: 1px solid var(--border-soft); font-size: 14px; }}
   .feed li:last-child {{ border-bottom: 0; }}
   .chart {{ width: 100%; height: auto; }}
-  .chart .axis {{ fill: #6e7681; font-size: 11px; }}
-  .empty {{ color: #6e7681; font-size: 14px; padding: 14px 0; }}
+  .chart .axis {{ fill: var(--muted2); font-size: var(--fs-1); }}
+  .empty {{ color: var(--muted2); font-size: 14px; padding: var(--sp-3) 0; }}
   .copilot p {{ font-size: 14.5px; }}
-  footer {{ color: #6e7681; font-size: 12px; margin-top: 26px; border-top: 1px solid #21262d; padding-top: 14px; }}
+  footer {{ color: var(--muted2); font-size: var(--fs-2); margin-top: var(--sp-6);
+    border-top: 1px solid var(--border-soft); padding-top: var(--sp-3); }}
   @media (max-width: 820px) {{ .grid {{ grid-template-columns: repeat(2, 1fr); }}
     .cols {{ grid-template-columns: 1fr; }} }}
 
   /* ── educational layer ── */
-  .toolbar {{ display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
-    margin: 2px 0 18px; }}
-  .toolbar button {{ font: inherit; font-size: 13px; cursor: pointer; color: #c9d1d9;
-    background: #161b22; border: 1px solid #30363d; border-radius: 999px;
+  .toolbar {{ display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+    margin: 2px 0 var(--sp-4); }}
+  .toolbar button {{ font: inherit; font-size: var(--fs-3); cursor: pointer; color: var(--text2);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
     padding: 6px 14px; display: inline-flex; align-items: center; gap: 6px; }}
-  .toolbar button:hover {{ border-color: #58a6ff; color: #e6edf3; }}
+  .toolbar button:hover {{ border-color: var(--accent); color: var(--text); }}
   .toolbar .on {{ background: #132a18; border-color: #2ea043; color: #59d27e; }}
-  .toolbar .hint {{ color: #6e7681; font-size: 12px; }}
+  body.light .toolbar .on {{ background: #dafbe1; border-color: #1a7f37; color: #1a7f37; }}
+  .toolbar .hint {{ color: var(--muted2); font-size: var(--fs-2); }}
   button.i {{ all: unset; cursor: help; display: inline-flex; align-items: center;
     justify-content: center; width: 15px; height: 15px; margin-left: 5px;
-    border-radius: 50%; background: #21303f; color: #79c0ff; font-size: 10px;
-    font-weight: 700; vertical-align: middle; line-height: 1; }}
-  button.i:hover, button.i:focus-visible {{ background: #1f6feb; color: #fff; outline: none; }}
-  button.i:focus-visible {{ box-shadow: 0 0 0 2px #1f6feb55; }}
-  .tterm {{ color: #6e7681; font-weight: 400; }}
+    border-radius: 50%; background: var(--inset); color: var(--accent2); font-size: 10px;
+    font-weight: 700; vertical-align: middle; line-height: 1; border: 1px solid var(--border); }}
+  button.i:hover, button.i:focus-visible {{ background: var(--accent); color: #fff; outline: none; }}
+  button.i:focus-visible {{ box-shadow: 0 0 0 2px var(--accent); }}
+  .tterm {{ color: var(--muted2); font-weight: 400; }}
   .tlbl {{ display: inline-flex; align-items: center; }}
   .explain {{ display: none; }}
-  body.learn .explain {{ display: block; color: #8b949e; font-size: 11.5px;
+  body.learn .explain {{ display: block; color: var(--muted); font-size: 11.5px;
     font-weight: 400; line-height: 1.45; margin-top: 3px; max-width: 46ch; }}
   body.learn .kpi {{ min-height: 0; }}
-  .h2sub {{ display: block; color: #8b949e; font-size: 12px; font-weight: 400; margin-top: 3px; }}
+  .h2sub {{ display: block; color: var(--muted); font-size: var(--fs-2); font-weight: 400; margin-top: 3px; }}
   .eqdot {{ opacity: 0; transition: opacity .12s; }}
   .eqpt:hover .eqdot {{ opacity: 1; }}
   /* tooltip popover (hover/focus = short; click = full explainer) */
-  #tip {{ position: fixed; z-index: 50; max-width: 320px; background: #1c2333;
-    border: 1px solid #30435f; border-radius: 10px; padding: 12px 14px;
-    box-shadow: 0 8px 28px #0009; font-size: 13px; line-height: 1.5;
-    color: #e6edf3; pointer-events: none; opacity: 0; transition: opacity .1s; }}
+  #tip {{ position: fixed; z-index: 50; max-width: 320px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+    box-shadow: 0 8px 28px #0009; font-size: var(--fs-3); line-height: 1.5;
+    color: var(--text); pointer-events: none; opacity: 0; transition: opacity .1s; }}
   #tip.show {{ opacity: 1; }}
   #tip.rich {{ pointer-events: auto; }}
-  #tip h4 {{ margin: 0 0 6px; font-size: 13px; }}
-  #tip h4 small {{ color: #8b949e; font-weight: 400; }}
-  #tip .ex {{ margin-top: 8px; padding: 8px 10px; background: #11161f; border-radius: 7px;
-    border-left: 3px solid #2ea043; color: #c9d1d9; }}
-  #tip .th {{ margin-top: 8px; color: #8b949e; font-style: italic; }}
-  #tip .more {{ margin-top: 8px; color: #58a6ff; font-size: 12px; }}
+  #tip h4 {{ margin: 0 0 6px; font-size: var(--fs-3); }}
+  #tip h4 small {{ color: var(--muted); font-weight: 400; }}
+  #tip .ex {{ margin-top: 8px; padding: 8px 10px; background: var(--inset); border-radius: 7px;
+    border-left: 3px solid var(--pos); color: var(--text2); }}
+  #tip .th {{ margin-top: 8px; color: var(--muted); font-style: italic; }}
+  #tip .more {{ margin-top: 8px; color: var(--accent); font-size: var(--fs-2); }}
   /* glossary modal */
   #gloss {{ position: fixed; inset: 0; z-index: 60; background: #010409cc;
     display: none; padding: 40px 16px; overflow: auto; }}
   #gloss.show {{ display: block; }}
-  #gloss .panel {{ max-width: 760px; margin: 0 auto; background: #0d1117;
-    border: 1px solid #30363d; border-radius: 14px; padding: 22px 24px; }}
+  #gloss .panel {{ max-width: 760px; margin: 0 auto; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; }}
   #gloss .gh {{ display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }}
   #gloss h2 {{ margin: 0; font-size: 18px; }}
-  #gloss input {{ flex: 1; font: inherit; font-size: 14px; background: #161b22;
-    border: 1px solid #30363d; border-radius: 8px; padding: 8px 12px; color: #e6edf3; }}
-  #gloss .x {{ all: unset; cursor: pointer; color: #8b949e; font-size: 22px; padding: 0 6px; }}
-  #gloss .g {{ padding: 12px 0; border-bottom: 1px solid #1c2129; }}
+  #gloss input {{ flex: 1; font: inherit; font-size: 14px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text); }}
+  #gloss .x {{ all: unset; cursor: pointer; color: var(--muted); font-size: 22px; padding: 0 6px; }}
+  #gloss .g {{ padding: 12px 0; border-bottom: 1px solid var(--border-soft); }}
   #gloss .g h3 {{ margin: 0 0 4px; font-size: 14px; }}
-  #gloss .g h3 small {{ color: #6e7681; font-weight: 400; }}
-  #gloss .g p {{ margin: 4px 0 0; font-size: 13px; color: #b3bcc7; line-height: 1.5; }}
-  #gloss .g .ex {{ color: #7d8896; font-size: 12.5px; }}
+  #gloss .g h3 small {{ color: var(--muted2); font-weight: 400; }}
+  #gloss .g p {{ margin: 4px 0 0; font-size: var(--fs-3); color: var(--text2); line-height: 1.5; }}
+  #gloss .g .ex {{ color: var(--muted); font-size: 12.5px; }}
   /* onboarding intro */
-  .intro {{ background: #11202e; border: 1px solid #1f425f; border-radius: 12px;
-    padding: 14px 18px; margin-bottom: 18px; font-size: 13.5px; color: #c9d1d9; }}
+  .intro {{ background: var(--inset); border: 1px solid var(--accent); border-radius: 12px;
+    padding: 14px 18px; margin-bottom: var(--sp-4); font-size: 13.5px; color: var(--text2); }}
   .intro[hidden] {{ display: none; }}
-  .intro b {{ color: #e6edf3; }}
+  .intro b {{ color: var(--text); }}
   .intro ul {{ margin: 8px 0 0; padding-left: 18px; }} .intro li {{ margin: 3px 0; }}
   @media (max-width: 480px) {{ #tip {{ max-width: 90vw; }} }}
   @media (prefers-reduced-motion: reduce) {{ * {{ transition: none !important; }} }}
@@ -681,6 +712,7 @@ def dashboard_html(data: dict) -> str:
   <div class="toolbar">
     <button id="learnBtn" type="button" aria-pressed="false">\U0001F393 Learn mode</button>
     <button id="glossBtn" type="button">\U0001F4D6 Glossary</button>
+    <button id="themeBtn" type="button" aria-label="Toggle light/dark theme">\U0001F319 Theme</button>
     <span class="hint">New here? Turn on <b>Learn mode</b>, or click any <b>?</b> for a plain-English explanation.</span>
   </div>
   <div class="intro" id="intro">

@@ -135,6 +135,14 @@ def test_educational_affordances_present():
     assert '"plain"' in out                              # glossary embedded for JS
 
 
+def test_design_tokens_and_light_mode_present():
+    out = html.dashboard_html(_sample())
+    assert "--bg:" in out and "--pos:" in out and "--fs-kpi:" in out   # token system
+    assert "body.light" in out                                          # light overrides
+    assert 'id="themeBtn"' in out and "qt_theme" in out                 # toggle + persistence
+    assert "var(--surface)" in out and "var(--text)" in out             # rules use tokens
+
+
 def test_dashboard_stays_offline_self_contained():
     # No external libraries/CDNs/URLs — must open offline from the Drive vault.
     out = html.dashboard_html(_sample())
