@@ -38,8 +38,10 @@ def build_signal_panel(years: int = 3, rebalance: str = "quarter",
                        cache_path: Path | None = None,
                        score_fn=None, regime_fn=None) -> dict:
     """Return the causal signal panel (built once, cached to store/)."""
+    import os
     cache_path = Path(cache_path) if cache_path else _CACHE
-    key = {"years": years, "rebalance": rebalance, "max_per_sector": max_per_sector}
+    key = {"years": years, "rebalance": rebalance, "max_per_sector": max_per_sector,
+           "regime_mode": os.getenv("REGIME_LABEL_MODE", "composite")}
     if use_cache and cache_path.exists():
         try:
             cached = json.loads(cache_path.read_text())

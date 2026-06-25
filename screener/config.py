@@ -62,6 +62,12 @@ HMM_FEATURES: list[str] = [
 ]
 REGIME_HYSTERESIS_DAYS: int = 3                  # M2: days of consistent signal before flip
 REGIME_CONFIDENCE_THRESHOLD: float = 0.55        # M2: min confidence for stable label
+# How HMM states get bull/sideways/bear labels. "composite" (default, current
+# live behavior) = return_rank + vol_rank → defensive in high-vol regimes even
+# when returns are positive. "return" = label by mean return only (bear = lowest
+# return), less defensive in volatile bulls. Overridable per-process via the
+# REGIME_LABEL_MODE env var (for A/B experiments without touching the live default).
+REGIME_LABEL_MODE: str = "composite"
 
 # ── Regime Labels ────────────────────────────────────────────────────────────
 REGIME_LABELS: dict[int, str] = {0: "bull", 1: "sideways", 2: "bear"}

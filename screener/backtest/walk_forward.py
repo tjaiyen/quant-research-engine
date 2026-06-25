@@ -93,10 +93,20 @@ def _train_hmm_on(features_df: pd.DataFrame) -> tuple:
             }
         )
     df = pd.DataFrame(rows)
-    df["return_rank"] = df["mean_return"].rank(ascending=False)
-    df["vol_rank"] = df["mean_vol"].rank(ascending=True)
-    df["composite"] = df["return_rank"] + df["vol_rank"]
-    df = df.sort_values("composite").reset_index(drop=True)
+    import os
+
+    from screener.config import REGIME_LABEL_MODE
+    mode = os.getenv("REGIME_LABEL_MODE", REGIME_LABEL_MODE)
+    if mode == "return":
+        # experimental: bear = lowest mean return, vol only as a tiebreak
+        df = df.sort_values(["mean_return", "mean_vol"],
+                            ascending=[False, True]).reset_index(drop=True)
+    else:
+        # composite (default, current live behavior): return_rank + vol_rank
+        df["return_rank"] = df["mean_return"].rank(ascending=False)
+        df["vol_rank"] = df["mean_vol"].rank(ascending=True)
+        df["composite"] = df["return_rank"] + df["vol_rank"]
+        df = df.sort_values("composite").reset_index(drop=True)
     regime_map = {
         int(df.iloc[0]["state"]): "bull",
         int(df.iloc[1]["state"]): "sideways",
