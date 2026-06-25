@@ -22,6 +22,14 @@ def test_agent_log_note_screen_entry():
     assert "SIDEWAYS" in md and "55" in md and "JNJ" in md
 
 
+def test_collapse_share_classes_dedup():
+    # A pre-dedup run can list both Alphabet classes; display collapses to GOOGL.
+    from render.build import _collapse_share_classes
+    assert _collapse_share_classes(["CAT", "GOOG", "GOOGL", "NUE"]) == ["CAT", "GOOGL", "NUE"]
+    assert _collapse_share_classes(["FOX", "NWS"]) == ["FOXA", "NWSA"]
+    assert _collapse_share_classes(["GOOGL", "CAT"]) == ["GOOGL", "CAT"]  # order preserved
+
+
 def test_decision_text_trades_first_person():
     d = {"when": "2026-07-01T13:30:00", "kind": "trades", "trades": [
         {"action": "BUY", "ticker": "AAPL", "trigger_reason": "NEW_BUY"},

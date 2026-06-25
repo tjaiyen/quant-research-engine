@@ -17,6 +17,22 @@ from render.markdown import atomic_write, tracker_dir
 
 logger = logging.getLogger(__name__)
 
+# Dual-class share redundancy: a run scored BEFORE the universe dedup may have
+# stored both classes (same company). Collapse to the kept class for DISPLAY only
+# — stored history is untouched (the scorecard still grades the original rows).
+# Mirrors render/html.py:_display_sector (display-layer remap, not a data change).
+_CANONICAL_SHARE_CLASS = {"GOOG": "GOOGL", "FOX": "FOXA", "NWS": "NWSA"}
+
+
+def _collapse_share_classes(tickers: list[str]) -> list[str]:
+    """Map redundant share classes to the kept class, de-duping in place order."""
+    out: list[str] = []
+    for t in tickers:
+        c = _CANONICAL_SHARE_CLASS.get(t, t)
+        if c not in out:
+            out.append(c)
+    return out
+
 
 # ── Reads (best-effort) ──────────────────────────────────────────────────────
 
@@ -129,8 +145,9 @@ def _decisions(trades: list[dict], max_entries: int = 40) -> list[dict]:
             run_at = str(run.get("run_at"))
             picks = sorted(fetch_screener_picks(run_at),
                            key=lambda p: -(p.get("composite_score") or 0))
-            top = [{"ticker": p["ticker"]} for p in picks if p.get("top_overall_rank")][:5] \
-                or [{"ticker": p["ticker"]} for p in picks[:5]]
+            ranked = [p["ticker"] for p in picks if p.get("top_overall_rank")] \
+                or [p["ticker"] for p in picks]
+            top = [{"ticker": t} for t in _collapse_share_classes(ranked)[:5]]
             decisions.append({
                 "when": run_at, "kind": "screen",
                 "regime": run.get("regime_label"), "regime_conf": run.get("regime_confidence"),
