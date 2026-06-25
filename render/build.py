@@ -274,12 +274,17 @@ def build_all() -> dict:
             sentiment = list_sentiment()
         except Exception:
             sentiment = []
+        try:
+            from utils.db import ticker_names
+            names = ticker_names()
+        except Exception:
+            names = {}
         atomic_write(root / "Dashboard.html", _html.dashboard_html({
             "as_of": now_iso, "regime": regime, "top_picks": top_picks,
             "summary": (results or {}).get("summary"),
             "sectors": (results or {}).get("sectors"),
             "latest_snapshot": latest_snapshot, "snapshots": snapshots,
-            "positions": paper["positions"], "sentiment": sentiment,
+            "positions": paper["positions"], "sentiment": sentiment, "names": names,
             "decisions": [notes._decision_text(d) for d in decisions],
             "scorecard": scorecard, "copilot": _latest_copilot(),
             "last_run": _latest_run(), "tournament": _latest_tournament(),

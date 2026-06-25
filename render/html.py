@@ -79,6 +79,13 @@ def _title(emoji: str, text: str, key: str = "", sub_key: str = "") -> str:
     return f'{emoji} {_esc(text)}{_ibtn(key) if key else ""}{sub_html}'
 
 
+def _ticker(sym, names: dict | None = None) -> str:
+    """'<TICKER> · Company Name' — the name is muted and omitted if unknown."""
+    nm = (names or {}).get(str(sym).upper()) if sym else None
+    co = f' <span class="coname">{_esc(nm)}</span>' if nm else ""
+    return f'<strong>{_esc(sym)}</strong>{co}'
+
+
 def _kpi(label: str, value: str, sub: str = "", tone: str = "", key: str = "") -> str:
     cls = f" {tone}" if tone else ""
     sub_html = f'<div class="kpi-sub">{_esc(sub)}</div>' if sub else ""
@@ -192,7 +199,7 @@ def _screener_stats(summary: dict) -> str:
                  f'<div class="chips">{inner}</div>')
 
 
-def _picks_section(picks: list[dict], sectors: dict) -> str:
+def _picks_section(picks: list[dict], sectors: dict, names: dict | None = None) -> str:
     if not picks:
         return _card(_title("\U0001F3AF", "Top picks", "top_overall"),
                      '<div class="empty">No screener run yet.</div>')
@@ -202,7 +209,7 @@ def _picks_section(picks: list[dict], sectors: dict) -> str:
         s = look.get(p.get("ticker"), {})
         rows.append(
             f'<div class="pick"><div class="pick-hd">'
-            f'<strong>{_esc(p.get("ticker"))}</strong>'
+            f'{_ticker(p.get("ticker"), names)}'
             f'<span class="pick-sec">{_esc(p.get("sector", ""))}</span>'
             f'<span class="pick-score" title="overall score">{num(p.get("composite_score", p.get("score")), 3)}'
             f'{_ibtn("composite")}</span>'
@@ -211,7 +218,7 @@ def _picks_section(picks: list[dict], sectors: dict) -> str:
                         sub_key="composite"), "".join(rows))
 
 
-def _sector_table(sectors: dict) -> str:
+def _sector_table(sectors: dict, names: dict | None = None) -> str:
     if not sectors:
         return ""
     rows = []
@@ -221,7 +228,7 @@ def _sector_table(sectors: dict) -> str:
         top = next((s for s in stocks if s.get("rank") == 1), stocks[0] if stocks else {})
         rows.append(
             f"<tr><td>{_esc(name.replace('_', ' '))}</td>"
-            f"<td><strong>{_esc(top.get('ticker', '—'))}</strong></td>"
+            f"<td>{_ticker(top.get('ticker', '—'), names)}</td>"
             f"<td>{num(top.get('composite_score'), 3) if top.get('composite_score') is not None else '—'}</td>"
             f"<td>{passed}/{len(stocks)}</td></tr>")
     body = (f'<table class="tbl"><thead><tr>{_th("sector", "Sector")}'
@@ -263,7 +270,7 @@ def _vetoes_section(sectors: dict, summary: dict) -> str:
                  f'<div class="chips">{chips}{skip_chip}</div>{sample_html}')
 
 
-def _positions_section(positions: list[dict]) -> str:
+def _positions_section(positions: list[dict], names: dict | None = None) -> str:
     if not positions:
         inner = ('<div class="empty">No open positions yet — the first paper buys '
                  'land in the monthly 1st–5th window.</div>')
@@ -273,7 +280,7 @@ def _positions_section(positions: list[dict]) -> str:
         upnl = p.get("unrealized_pnl")
         tone = "pos" if (upnl or 0) >= 0 else "neg"
         rows.append(
-            f"<tr><td><strong>{_esc(p.get('ticker'))}</strong></td>"
+            f"<tr><td>{_ticker(p.get('ticker'), names)}</td>"
             f"<td>{num(p.get('shares', p.get('quantity')), 2)}</td>"
             f"<td>{money(p.get('avg_cost', p.get('cost_basis', p.get('entry_price'))))}</td>"
             f"<td>{money(p.get('current_price'))}</td>"
@@ -286,14 +293,14 @@ def _positions_section(positions: list[dict]) -> str:
     return _card(_title("\U0001F4BC", "Positions", "positions"), body)
 
 
-def _sentiment_section(rows: list[dict]) -> str:
+def _sentiment_section(rows: list[dict], names: dict | None = None) -> str:
     rows = [r for r in (rows or []) if r.get("label") and r.get("label") != "UNAVAILABLE"]
     if not rows:
         return ""
     rows = sorted(rows, key=lambda r: (r.get("sentiment_score") if r.get("sentiment_score")
                                        is not None else 0))[:10]
     tr = "".join(
-        f"<tr><td><strong>{_esc(r.get('ticker'))}</strong></td>"
+        f"<tr><td>{_ticker(r.get('ticker'), names)}</td>"
         f"<td>{num(r.get('sentiment_score'), 3)}</td><td>{_esc(r.get('label'))}</td>"
         f"<td>{_esc(r.get('n_headlines'))}</td></tr>" for r in rows)
     body = (f'<table class="tbl"><thead><tr><th>Ticker</th>{_th("sentiment_score", "Score")}'
@@ -495,6 +502,7 @@ def dashboard_html(data: dict) -> str:
     snap = data.get("latest_snapshot") or {}
     picks = data.get("top_picks") or []
     sectors = data.get("sectors") or {}
+    names = data.get("names") or {}
     decisions = data.get("decisions") or []
     as_of = data.get("as_of", "")
 
@@ -582,6 +590,7 @@ def dashboard_html(data: dict) -> str:
   .pick:last-child {{ border-bottom: 0; }}
   .pick-hd {{ display: flex; align-items: baseline; gap: 10px; }}
   .pick-sec {{ color: #8b949e; font-size: 12px; }}
+  .coname {{ color: #8b949e; font-weight: 400; font-size: 12px; }}
   .pick-score {{ margin-left: auto; font-variant-numeric: tabular-nums; color: #3fb950; font-weight: 640; }}
   .sigs {{ margin-top: 7px; display: grid; gap: 3px; }}
   .sigrow {{ display: grid; grid-template-columns: 78px 1fr 36px; align-items: center; gap: 8px; }}
@@ -694,16 +703,16 @@ def dashboard_html(data: dict) -> str:
          _svg_equity(data.get("snapshots") or []))}
 
   <div class="cols">
-    {_picks_section(picks, sectors)}
+    {_picks_section(picks, sectors, names)}
     {_card("\U0001F9E0 Recent decisions", feed_html)}
   </div>
   <div class="cols">
-    {_sector_table(sectors)}
+    {_sector_table(sectors, names)}
     {_vetoes_section(sectors, data.get("summary"))}
   </div>
 
-  {_positions_section(data.get("positions") or [])}
-  {_sentiment_section(data.get("sentiment"))}
+  {_positions_section(data.get("positions") or [], names)}
+  {_sentiment_section(data.get("sentiment"), names)}
   {_signal_lab_section(data.get("signal_lab") or {})}
   {_tournament_section(data.get("tournament") or {})}
   {_scorecard_section(data.get("scorecard"))}

@@ -180,3 +180,25 @@ def test_signal_bar_keys_are_all_defined():
     from render import glossary
     for sig in html._SIGNALS:
         assert glossary.has(sig), f"signal bar '{sig}' has no glossary entry"
+
+
+def test_company_names_render_next_to_tickers():
+    d = _sample()
+    d["positions"] = [{"ticker": "JNJ", "shares": 3, "cost_basis": 150,
+                       "current_price": 160, "market_value": 480,
+                       "unrealized_pnl": 30}]
+    d["names"] = {"JNJ": "Johnson Co", "ZZZ": "<b>Evil</b> Inc"}
+    out = html.dashboard_html(d)
+    assert '<span class="coname">Johnson Co</span>' in out   # name beside ticker
+    assert ".coname" in out                                   # styled muted
+    # unknown ticker → no name; known name with HTML is escaped (B13)
+    d["positions"] = [{"ticker": "ZZZ", "shares": 1, "cost_basis": 1,
+                       "current_price": 1, "market_value": 1, "unrealized_pnl": 0}]
+    out2 = html.dashboard_html(d)
+    assert "<b>Evil</b>" not in out2 and "&lt;b&gt;Evil&lt;/b&gt;" in out2
+
+
+def test_company_names_optional_backward_compatible():
+    # No names map → ticker still renders, no crash.
+    out = html.dashboard_html(_sample())   # _sample has no "names" key
+    assert "JNJ" in out

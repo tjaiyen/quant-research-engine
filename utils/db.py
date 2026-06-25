@@ -148,6 +148,15 @@ def list_tickers() -> pd.DataFrame:
         )
 
 
+def ticker_names() -> dict[str, str]:
+    """Map of {symbol: human-readable company name} for non-null names (B5 reuse)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT symbol, name FROM tickers WHERE name IS NOT NULL AND name != ''"
+        ).fetchall()
+    return {str(s).upper(): str(n) for s, n in rows}
+
+
 # ---------- Holdings ----------
 
 def upsert_holding(
