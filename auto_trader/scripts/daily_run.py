@@ -29,6 +29,7 @@ def run_daily_monitor() -> dict:
     from auto_trader.risk.stop_loss_monitor import scan_stop_losses
     from auto_trader.state.portfolio_db import (
         compute_realized_pnl_ytd,
+        get_all_positions,
         get_peak_portfolio_value,
         initialize_db,
         log_portfolio_snapshot,
@@ -36,6 +37,20 @@ def run_daily_monitor() -> dict:
     )
 
     initialize_db()
+
+    # Refresh the HELD positions' prices (+SPY) before marking so the daily
+    # mark-to-market reflects the latest close — else P&L only moves when the
+    # weekly universe seed runs. Lean (~held + SPY, not the 220 universe);
+    # best-effort so an offline/yfinance hiccup never blocks the monitor.
+    try:
+        from tasks.refresh_prices import main as refresh_prices
+        held = sorted({p["ticker"] for p in get_all_positions()})
+        if held:
+            refresh_prices([*held, "SPY"])   # symbols are positional args
+            logger.info("daily: refreshed prices for %d held tickers + SPY", len(held))
+    except Exception as exc:
+        logger.warning("daily price refresh skipped (%s)", exc)
+
     state = sync_portfolio_state()
     account = get_account_info()
 
