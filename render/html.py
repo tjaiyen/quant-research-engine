@@ -79,6 +79,13 @@ def _title(emoji: str, text: str, key: str = "", sub_key: str = "") -> str:
     return f'{emoji} {_esc(text)}{_ibtn(key) if key else ""}{sub_html}'
 
 
+def _asof(iso) -> str:
+    """A muted 'as of <date time>' stamp for cached/stale-able sections."""
+    if not iso:
+        return ""
+    return f' <span class="asof">· as of {_esc(str(iso)[:16].replace("T", " "))}</span>'
+
+
 def _ticker(sym, names: dict | None = None) -> str:
     """'<TICKER> · Company Name' — the name is muted and omitted if unknown."""
     nm = (names or {}).get(str(sym).upper()) if sym else None
@@ -491,7 +498,8 @@ def _signal_lab_section(sl: dict) -> str:
                  f'({_esc(val.get("n_oos"))} quarters): '
                  f'candidate <strong>{pct(val.get("candidate_oos"))}</strong> · '
                  f'default {pct(val.get("default_oos"))} · SPY {pct(val.get("spy_oos"))}</p>')
-    return _card(_title("\U0001F52C", "Signal Lab", "ic"), f'{strip}{tbl}')
+    return _card(_title("\U0001F52C", "Signal Lab", "ic") + _asof(sl.get("as_of")),
+                 f'{strip}{tbl}')
 
 
 def _tournament_section(t: dict) -> str:
@@ -524,7 +532,7 @@ def _tournament_section(t: dict) -> str:
              f'<strong>{pct(t.get("beat_spy"))}</strong> · beat random {_ibtn("control")} by '
              f'<strong>{pct(t.get("beat_random"))}</strong> · fresh-data rank {_ibtn("out_of_sample")} '
              f'{_esc(t.get("oos_rank","—"))}</p>')
-    return _card(_title("\U0001F3C6", "Strategy tournament", "tournament"),
+    return _card(_title("\U0001F3C6", "Strategy tournament", "tournament") + _asof(t.get("as_of")),
                  f'<p class="muted">{_esc(t.get("verdict",""))}</p>{strip}{bars}'
                  f'<details class="more-tbl"><summary>Full leaderboard table</summary>{tbl}</details>')
 
@@ -908,7 +916,18 @@ def dashboard_html(data: dict) -> str:
   .intro[hidden] {{ display: none; }}
   .intro b {{ color: var(--text); }}
   .intro ul {{ margin: 8px 0 0; padding-left: 18px; }} .intro li {{ margin: 3px 0; }}
+  .asof {{ color: var(--muted2); font-weight: 400; font-size: var(--fs-1); }}
   @media (max-width: 480px) {{ #tip {{ max-width: 90vw; }} }}
+  @media (max-width: 600px) {{
+    /* dense tables scroll within their card instead of overflowing the page */
+    .card {{ overflow-x: auto; }}
+    .tbl td, .tbl th {{ white-space: nowrap; }}
+    .kpi.big .kpi-val {{ font-size: 24px; }}
+    .headline {{ font-size: 15px; }}
+    .db-row {{ grid-template-columns: minmax(74px, 1fr) 1fr 74px; }}
+    .hb-row {{ grid-template-columns: minmax(96px, 1.3fr) 1fr 56px; }}
+    .donut-lg {{ grid-template-columns: 1fr; }}
+  }}
   @media (prefers-reduced-motion: reduce) {{ * {{ transition: none !important; }} }}
 </style></head>
 <body><div class="wrap">

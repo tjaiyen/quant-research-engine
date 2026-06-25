@@ -143,6 +143,18 @@ def test_hierarchy_headline_hero_zones():
     assert "kpi-row1" in out and "kpi-row2" in out and "kpi big" in out  # 2-tier KPIs
 
 
+def test_mobile_and_timestamps():
+    d = _sample()
+    d["tournament"] = {"as_of": "2026-06-24T19:00:00", "verdict": "ok", "beat_spy": 0.05,
+                       "beat_random": 0.04, "oos_rank": 2,
+                       "leaderboard": [{"rank": 1, "label": "Pure Sharpe", "group": "weighting",
+                                        "total": 0.31, "sharpe": 1.2, "excess": 0.05}]}
+    out = html.dashboard_html(d)
+    assert "@media (max-width: 600px)" in out          # mobile rules present
+    assert "overflow-x: auto" in out                    # tables scroll, don't overflow page
+    assert 'class="asof"' in out and "as of 2026-06-24 19:00" in out   # per-section stamp
+
+
 def test_visual_charts_render():
     from render import html as h
     # bar/donut helpers emit valid markup and survive empty input
