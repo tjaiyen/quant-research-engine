@@ -14,6 +14,7 @@ honor both — ``TRADER_DB_PATH`` takes precedence if set.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 # ── Capital ────────────────────────────────────────────────────────────────
 MONTHLY_DEPOSIT_USD: float = 1_000.00
@@ -96,20 +97,26 @@ REQUIRE_PAPER_BEFORE_LIVE: bool = True
 
 # ── Paths (runtime resolution per H3) ──────────────────────────────────────
 def get_db_path() -> str:
-    """Auto-trader's SQLite path. Prefers TRADER_DB_PATH; falls back to DB_PATH.
+    """Auto-trader's SQLite path — ALWAYS absolute and repo-root anchored.
 
-    The cockpit's own DB_PATH points at ``db/cockpit.sqlite`` — we use
-    a separate file (``auto_trader/state/portfolio.db``) by default so
-    the two systems don't share a database.
+    Prefers TRADER_DB_PATH; falls back to a non-cockpit DB_PATH; otherwise the
+    canonical ``store/portfolio.db``. A RELATIVE value (env or default) is
+    resolved against the repo root so the path is identical regardless of the
+    process's cwd — this is what prevents a stray second ``portfolio.db`` from
+    being created/read when auto_trader is imported outside the CLI's chdir.
     """
     explicit = os.getenv("TRADER_DB_PATH")
-    if explicit:
-        return explicit
-    # Only honor DB_PATH if it doesn't look like the cockpit's path.
     legacy = os.getenv("DB_PATH", "")
-    if legacy and "cockpit" not in legacy:
-        return legacy
-    return "auto_trader/state/portfolio.db"
+    if explicit:
+        raw = explicit
+    elif legacy and "cockpit" not in legacy:
+        raw = legacy
+    else:
+        raw = "store/portfolio.db"
+    p = Path(raw)
+    if not p.is_absolute():
+        p = Path(__file__).resolve().parents[1] / p   # repo root = parents[1]
+    return str(p)
 
 
 def get_screener_cache_path() -> str:

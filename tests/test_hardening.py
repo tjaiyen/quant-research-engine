@@ -114,3 +114,21 @@ def test_cmd_backtest_friendly_on_failure(monkeypatch, capsys):
     assert rc == 1                                   # non-zero, no traceback
     err = capsys.readouterr().err
     assert "could not run" in err and "seed" in err  # friendly guidance
+
+
+def test_trader_db_path_is_absolute_and_cwd_independent(tmp_path, monkeypatch):
+    # The two-portfolio.db bug: a relative default resolved differently by cwd.
+    # Now it must be absolute, repo-anchored, and identical from any directory.
+    import os
+    from auto_trader.config import get_db_path
+    monkeypatch.delenv("TRADER_DB_PATH", raising=False)
+    monkeypatch.delenv("DB_PATH", raising=False)
+    p1 = get_db_path()
+    cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        p2 = get_db_path()
+    finally:
+        os.chdir(cwd)
+    assert p1 == p2 and os.path.isabs(p1)
+    assert p1.endswith("store/portfolio.db")          # the canonical DB, not the stray
