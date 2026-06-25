@@ -193,7 +193,7 @@ def _svg_equity(snaps: list[dict], w: int = 760, h: int = 240) -> str:
     strat_poly = " ".join(xy(i, v) for i, v in enumerate(strat))
     bench_poly = " ".join(xy(i, b) for i, b in enumerate(bench) if b is not None)
     base_y = pad + ih - (ih * (100.0 - lo) / (hi - lo))
-    bench_line = (f'<polyline points="{bench_poly}" fill="none" stroke="#8b949e" '
+    bench_line = (f'<polyline points="{bench_poly}" fill="none" class="eq-bench" '
                   f'stroke-width="2" stroke-dasharray="4 4"/>' if bench_poly else "")
     # Per-point hover targets: a native <title> tooltip (works with zero JS,
     # offline) + a dot the JS can light up. Shows the indexed strategy vs SPY value.
@@ -210,11 +210,11 @@ def _svg_equity(snaps: list[dict], w: int = 760, h: int = 240) -> str:
             f'width="{slice_w:.1f}" height="{ih}" fill="transparent">'
             f'<title>{_esc(tip)}</title></rect>'
             f'<circle cx="{cx:.1f}" cy="{xy(i, v).split(",")[1]}" r="3" '
-            f'fill="#3fb950" class="eqdot"/></g>')
+            f'class="eqdot"/></g>')
     return f'''<svg viewBox="0 0 {w} {h}" class="chart" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Equity curve — strategy vs SPY, indexed to 100 at start. Hover a point for values.">
-  <line x1="{pad}" y1="{base_y:.1f}" x2="{w - pad}" y2="{base_y:.1f}" stroke="#30363d" stroke-width="1"/>
+  <line x1="{pad}" y1="{base_y:.1f}" x2="{w - pad}" y2="{base_y:.1f}" class="eq-base" stroke-width="1"/>
   {bench_line}
-  <polyline points="{strat_poly}" fill="none" stroke="#3fb950" stroke-width="2.5"/>
+  <polyline points="{strat_poly}" fill="none" class="eq-strat" stroke-width="2.5"/>
   {"".join(dots)}
   <text x="{pad}" y="{pad - 10}" class="axis">indexed to 100 at start</text>
   <text x="{w - pad}" y="{pad - 10}" class="axis" text-anchor="end">strategy ● &nbsp; SPY ┄</text>
@@ -738,9 +738,11 @@ def dashboard_html(data: dict) -> str:
   .badge {{ padding: 3px 12px; border-radius: 999px; font-weight: 650; font-size: var(--fs-3);
     text-transform: uppercase; letter-spacing: .04em; color: #0d1117; }}
   .updated {{ margin-left: auto; color: var(--muted); font-size: var(--fs-3); }}
+  /* z-index order: nav 40 < toTop 45 < tip 50 < gloss 60 */
   .nav {{ position: sticky; top: 0; z-index: 40; display: flex; flex-wrap: wrap;
     align-items: center; gap: 4px 6px; margin: 0 -20px var(--sp-5); padding: 8px 20px;
-    font-size: var(--fs-3); background: color-mix(in srgb, var(--bg) 88%, transparent);
+    font-size: var(--fs-3); background: var(--bg);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(6px); border-bottom: 1px solid var(--border-soft); }}
   .nav-jump {{ display: flex; flex-wrap: wrap; gap: 4px 4px; }}
   .nav-jump a {{ color: var(--muted); text-decoration: none; padding: 4px 10px;
@@ -819,6 +821,11 @@ def dashboard_html(data: dict) -> str:
   .feed li:last-child {{ border-bottom: 0; }}
   .chart {{ width: 100%; height: auto; }}
   .chart .axis {{ fill: var(--muted2); font-size: var(--fs-1); }}
+  /* equity chart strokes via tokens so the curve is correct in light mode too */
+  .chart .eq-base {{ stroke: var(--border); }}
+  .chart .eq-bench {{ stroke: var(--muted); }}
+  .chart .eq-strat {{ stroke: var(--pos); }}
+  .chart .eqdot {{ fill: var(--pos); }}
   /* diverging + horizontal bars (theme-aware via var()) */
   .dbars, .hbars {{ display: grid; gap: 6px; margin: 4px 0 2px; }}
   .db-row {{ display: grid; grid-template-columns: minmax(96px,1.2fr) 1fr 92px;
@@ -926,6 +933,7 @@ def dashboard_html(data: dict) -> str:
     .headline {{ font-size: 15px; }}
     .db-row {{ grid-template-columns: minmax(74px, 1fr) 1fr 74px; }}
     .hb-row {{ grid-template-columns: minmax(96px, 1.3fr) 1fr 56px; }}
+    .db-lbl, .hb-lbl {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
     .donut-lg {{ grid-template-columns: 1fr; }}
   }}
   @media (prefers-reduced-motion: reduce) {{ * {{ transition: none !important; }} }}
