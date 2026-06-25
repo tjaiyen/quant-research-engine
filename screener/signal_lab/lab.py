@@ -38,6 +38,19 @@ def _rows_by_date(panel: dict) -> dict:
     return out
 
 
+def _signal_keys(panel: dict) -> tuple[str, ...]:
+    """Signal columns actually present in the panel (the live 5 first, then any
+    extras like an enriched `momentum` column). Lets the lab IC-test a candidate
+    signal *before* it is ever promoted into the live WEIGHT_MATRIX contract."""
+    seen: dict = {}
+    for r in panel.get("rows", []):
+        for k in (r.get("signals") or {}):
+            seen[k] = True
+    ordered = [s for s in SIGNALS if s in seen]
+    extras = sorted(k for k in seen if k not in SIGNALS)
+    return tuple(ordered + extras)
+
+
 def _ic_series(rows_by_date: dict, sig: str) -> list[float]:
     """One cross-sectional Spearman IC per date (drops nan/degenerate dates)."""
     ics = []
@@ -85,10 +98,11 @@ def analyze_signals(panel: dict) -> dict:
     for d, reg in regime_of.items():
         dates_by_regime[reg].append(d)
 
-    sig_threshold = _bonferroni_threshold(len(SIGNALS))
+    keys = _signal_keys(panel) or SIGNALS
+    sig_threshold = _bonferroni_threshold(len(keys))
     out: dict = {"n_dates": len(rbd), "n_rows": len(panel.get("rows", [])),
                  "ir_threshold": sig_threshold, "signals": {}}
-    for sig in SIGNALS:
+    for sig in keys:
         ics = _ic_series(rbd, sig)
         ic_mean = float(np.mean(ics)) if ics else None
         ic_std = float(np.std(ics, ddof=1)) if len(ics) > 1 else None
@@ -108,11 +122,11 @@ def analyze_signals(panel: dict) -> dict:
 
     # pooled signal-signal Spearman correlation (redundancy check)
     vals = {s: [(r.get("signals") or {}).get(s) for r in panel.get("rows", [])]
-            for s in SIGNALS}
+            for s in keys}
     corr: dict = {}
-    for a in SIGNALS:
+    for a in keys:
         corr[a] = {}
-        for b in SIGNALS:
+        for b in keys:
             pairs = [(x, y) for x, y in zip(vals[a], vals[b])
                      if x is not None and y is not None]
             c = _spearman([p[0] for p in pairs], [p[1] for p in pairs]) \

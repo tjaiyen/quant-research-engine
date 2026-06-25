@@ -232,6 +232,21 @@ signal-lab and **directly re-tests the live ARIMA+Sharpe edge** (`WEIGHT_MATRIX_
 
 ---
 
+## Theme I — New signals, built & IC-gated (2026-06-24)
+
+The honest exit of Phase 14/15 was "re-weighting 5 weak signals can't manufacture
+edge — you need *new* signals." This theme builds them, each IC-gated through the
+signal-lab on the causal panel **before** any promotion into the live composite.
+
+### U31 — 12-1 momentum ✅ BUILT + MEASURED · ⏸ promotion pending your OK
+- **What:** `screener/signals/momentum_signal.py` — trailing 252-day return excluding the last 21 (skip short-horizon reversal; Jegadeesh-Titman / Asness). Price-only, fully causal (no look-ahead) — the one new signal that slots into the backtest panel cleanly. Same `(ticker, price_history, horizon)→{score,raw,metadata}` interface as the existing five; wired into `panel.py` as an always-measured column; the signal-lab now IC-tests *any* panel signal column (`_signal_keys`), not just the hard 5.
+- **Measured result (honest, contradicts the textbook prior):** IC **+0.045** — *weaker* than ARIMA (+0.060), noisy (IR 0.52), **not** Bonferroni-significant. Muted vs the literature because the universe is large-cap-only, the window is 10 quarters mostly-up, and rebalancing is quarterly not monthly. **But:** best **quintile spread** of any signal (+0.036) and near-zero correlation to ARIMA (−0.02) — its *top picks* separate returns even though its full-rank IC is noisy.
+- **Portfolio test (ARIMA+Sharpe+Momentum vs the live ARIMA+Sharpe, net 20bps):** adding momentum improves OOS total **+0.7pp** (17.4%→18.2%), OOS Sharpe **3.47→4.66**, CPCV positive-folds **73%→87%** (DSR 0.988→0.963). Real but **marginal**, and momentum is **+0.86 correlated with Sharpe** — so it partly re-expresses the Sharpe component rather than adding wholly new information, on the same favourable small sample where even random scored DSR 0.96.
+- **Decision:** momentum is a legitimate **weakly-additive** signal — kept measured + available. **Not** auto-promoted into the live `WEIGHT_MATRIX`: that changes live (paper) trading behaviour + the validated `EXPECTED_SIGNAL_KEYS` 5→6 contract, so per USER.md it's **proposed, not done silently**. Promotion options when you decide: (a) ARIMA+Sharpe+Momentum 6-key composite; (b) ARIMA+Momentum, dropping the redundant Sharpe; (c) hold for forward paper data. The marginal, Sharpe-redundant evidence argues for (c) or a conservative (b).
+- **Next signals (the real diversifiers, not yet built):** **quality** (ROE / low debt / earnings stability) and **value** (P/B, P/E, FCF yield) would decorrelate from both ARIMA and momentum — but they hit a **look-ahead trap**: yfinance serves only *current* fundamentals, so they can't be IC-tested on the historical panel without point-in-time data. Honest options: build them **live-screen-only** (current snapshot, no backtest claim) or defer until a PIT fundamentals source exists. Flagged, not silently skipped.
+
+---
+
 ## Theme E — Explicit DECLINES (with why)
 
 - **LSTM / TensorFlow price prediction** (tensorflow) — DECLINE (L). Overfits small free-data, seed-unstable, dominated by a naïve "tomorrow≈today" baseline, lookahead-prone. ARIMA/GARCH/Kalman already cover the linear-Gaussian job.

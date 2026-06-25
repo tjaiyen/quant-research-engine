@@ -57,6 +57,8 @@ def build_signal_panel(years: int = 3, rebalance: str = "quarter",
     )
     from screener.data.market_features import get_market_features
 
+    from screener.signals.momentum_signal import momentum_signal
+
     if score_fn is None:
         from screener.engine.composite_scorer import score_stock as score_fn
     if regime_fn is None:
@@ -106,9 +108,20 @@ def build_signal_panel(years: int = 3, rebalance: str = "quarter",
             fwd = _fwd_return(t, d0, d1)
             if fwd is None:
                 continue
+            # The live 5 signal scores, plus a causal 12-1 momentum column the
+            # signal-lab can IC-test. Momentum is MEASURED here, not part of the
+            # live composite — promotion into WEIGHT_MATRIX is a separate, OK-gated
+            # step. Best-effort: a momentum miss never drops the row.
+            signals = dict(res.get("signal_scores", {}))
+            try:
+                mom = momentum_signal(t, ph_train).get("score")
+                if mom is not None:
+                    signals["momentum"] = float(mom)
+            except Exception:
+                pass
             panel["rows"].append({
                 "d0": str(d0.date()), "ticker": t, "sector": sector_of.get(t),
-                "signals": res.get("signal_scores", {}),
+                "signals": signals,
                 "composite": res.get("composite_score"),
                 "passed_veto": bool(res.get("passed_veto")),
                 "fwd_return": fwd,

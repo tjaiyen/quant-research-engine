@@ -33,6 +33,12 @@ MC_LOSS_THRESHOLD: float = 0.90                 # terminal < 0.90 × current = l
 KALMAN_TRANSITION_COV: float = 1e-5
 KALMAN_OBSERVATION_COV: float = 1e-2
 
+# 12-1 momentum: trailing ~12 months (252 trading days) EXCLUDING the most recent
+# ~1 month (21 trading days), to dodge short-horizon reversal. Price-only/causal —
+# measured in the signal-lab before any promotion into the live WEIGHT_MATRIX.
+MOMENTUM_LOOKBACK_DAYS: int = 252
+MOMENTUM_SKIP_DAYS: int = 21
+
 # ── Universe & Output ────────────────────────────────────────────────────────
 STOCKS_PER_SECTOR: int = 20
 TOP_N_OUTPUT: int = 5
