@@ -39,8 +39,8 @@ risk-adjusted momentum. A 12-1 momentum signal is implemented and measured but
 blackout, delisting/stale data, sector-exposure caps, drawdown circuit, etc. A
 vetoed name is *never* resurrected by the score-relaxation loop.
 
-**Paper execution.** Selected names flow to a mock broker with Kelly-style
-sizing and an append-only ledger (positions, fills, daily equity snapshots). The
+**Paper execution.** Selected names flow to a mock broker with score- and
+volatility-weighted (vol-parity) sizing and an append-only ledger (positions, fills, daily equity snapshots). The
 live-trading path exists but is gated behind a minimum paper duration and an
 explicit confirmation token — never weakened.
 
@@ -81,9 +81,12 @@ Re-validating the live ARIMA+Sharpe weighting through the full rigor cluster on
 confidence, but not proven.* The portfolio edge passes a return-distribution test
 (DSR), yet no single signal is statistically significant once you correct for
 having tried five of them, and the OOS spread is wide on ten quarterly
-observations. Re-weighting five weak signals cannot manufacture an edge — the
-honest next step is **new signals**, and live forward paper data is the real
-arbiter.
+observations. Two more caveats I won't bury: the candidate beats a *random*
+control out-of-sample by only **+0.8pp** (and random itself beat SPY in this
+mostly-up window), and a **simpler** equal-ish weighting actually posts a higher
+OOS Sharpe (4.27 vs the candidate's 3.47). Re-weighting five weak signals cannot
+manufacture an edge — the honest next step is **new signals**, and live forward
+paper data is the real arbiter.
 
 A worked example of the discipline: adding the 12-1 momentum signal *improved*
 the in-sample OOS numbers (Sharpe 3.47 → 4.66, CPCV positive-folds 73% → 87%) —

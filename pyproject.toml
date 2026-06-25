@@ -1,3 +1,9 @@
+[project]
+name = "quant-tracker"
+version = "0.1.0"
+description = "Regime-aware equity research engine with built-in out-of-sample validation (paper-only)."
+requires-python = ">=3.11"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

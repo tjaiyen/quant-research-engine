@@ -18,13 +18,29 @@ def test_doctor_rejects_synced_store():
     assert any("cloud-sync" in reason or "sync" in reason for reason in r["reasons"])
 
 
-def test_doctor_rejects_non_canonical_vault():
+def test_doctor_rejects_non_canonical_vault(tmp_path):
     import doctor
-    # A local /tmp path: not on a sync mount AND not the CloudStorage mount.
-    r = doctor.check_vault_canonical("/tmp/not-the-vault")
+    # Default mode (no explicit VAULT_PATH): an existing local dir is NOT the
+    # canonical CloudStorage mount → rejected.
+    local = tmp_path / "vault"
+    local.mkdir()
+    r = doctor.check_vault_canonical(local, explicit=False)
     assert r["safe"] is False
     reasons = " ".join(r["reasons"]).lower()
     assert "cloud-sync" in reasons or "cloudstorage" in reasons
+
+
+def test_doctor_accepts_explicit_local_vault(tmp_path):
+    import doctor
+    # Explicit VAULT_PATH (a stranger's own Obsidian vault): any existing,
+    # writable dir is accepted — the strict CloudStorage rule is maintainer-only.
+    local = tmp_path / "Obsidian" / "Investment_AI"
+    local.mkdir(parents=True)
+    assert doctor.check_vault_canonical(local, explicit=True)["safe"] is True
+    # A missing explicit path still fails (catches an unmounted Drive / typo).
+    missing = doctor.check_vault_canonical(tmp_path / "nope", explicit=True)
+    assert missing["safe"] is False
+    assert "does not exist" in " ".join(missing["reasons"]).lower()
 
 
 def test_heal_drive_suffix_resolves_volatile_segment(tmp_path):

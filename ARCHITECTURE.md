@@ -44,7 +44,7 @@ results as Markdown + a self-contained HTML dashboard into an Obsidian vault.
    │ auto_trader/  (paper only) │        │ screener/{backtest,tournament,│
    │   broker/mock  + ledger    │        │   signal_lab, rigor}          │
    │   risk/ 8 guards           │        │   walk-forward · IC · DSR ·   │
-   │   allocator/kelly_sizing   │        │   CPCV · cost haircut         │
+   │   allocator/position_sizer │        │   CPCV · cost haircut         │
    │   monitor/ decay + stops   │        │   (on-demand validation)      │
    └──────────┬─────────────────┘        └──────────────┬───────────────┘
               └──────────────┬──────────────────────────┘
@@ -85,7 +85,7 @@ results as Markdown + a self-contained HTML dashboard into an Obsidian vault.
 | Module | Output |
 |---|---|
 | `screener/engine/industry_ranker.py` | Per-sector top-N ranking from the composite (the screener's picks). |
-| `auto_trader/allocator/kelly_sizing.py` | Position sizing from conviction + risk. |
+| `auto_trader/allocator/position_sizer.py` | Position sizing — equal / score-weighted / score×inverse-vol (vol-parity). |
 | `auto_trader/risk/*` | The 8 risk guards run before any (paper) fill. |
 | `auto_trader/state/portfolio_db.py` | Append-only paper ledger: positions, fills, equity-curve snapshots, system events. |
 

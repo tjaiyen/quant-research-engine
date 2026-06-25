@@ -4,7 +4,7 @@ Replaces the Dash app + Fly cron with local rituals:
 
     track doctor                 off-Drive preflight (store local, vault canonical)
     track refresh [--full]       pull watchlist prices + sector ETF performance (daily)
-    track seed [--full|--refresh] seed the 220-stock screener universe into the cache
+    track seed [--full|--refresh] seed the 217-stock screener universe into the cache
     track screen  [--retrain]    run the regime-aware screener (weekly)
     track paper monitor          daily monitor — stops, decay rescore, equity snapshot
     track paper cycle            monthly buy cycle (no-op outside the buy window)
@@ -608,7 +608,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--full", action="store_true", help="full history backfill")
     r.set_defaults(func=cmd_refresh)
 
-    sd = sub.add_parser("seed", help="seed the 220-stock screener universe into the cache")
+    sd = sub.add_parser("seed", help="seed the 217-stock screener universe into the cache")
     sd.add_argument("--full", action="store_true", help="2y history (first-run bootstrap)")
     sd.add_argument("--refresh", action="store_true", help="top up only tickers >24h stale")
     sd.set_defaults(func=cmd_seed)

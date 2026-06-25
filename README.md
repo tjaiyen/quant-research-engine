@@ -15,7 +15,7 @@ and Combinatorial Purged Cross-Validation.
 *survives* the multiple-comparison-corrected Deflated Sharpe test (DSR ≈ 0.99) and
 is **not** cost-fragile (low turnover), but **no individual signal clears a
 Bonferroni-corrected significance bar** (ARIMA's IC info-ratio is +2.13, under the
-2.58 threshold). So the conclusion the tool reaches about itself is: *suggestive,
+2.576 threshold). So the conclusion the tool reaches about itself is: *suggestive,
 not proven — re-weighting five weak signals can't manufacture an edge; the real
 next step is new signals, and forward paper data is the arbiter.* Building the
 thing is half the work; **proving what it is and isn't** is the other half.
@@ -50,7 +50,7 @@ thing is half the work; **proving what it is and isn't** is the other half.
 ```
 yfinance → data_fetcher (Stooq fallback) → SQLite cache (off-disk)
    → screener/  HMM regime + 5 signals + 8 vetoes → per-sector ranking
-   → auto_trader/  mock broker + 8 risk guards + Kelly sizing + append-only ledger
+   → auto_trader/  mock broker + 8 risk guards + score/vol-weighted sizing + append-only ledger
    → screener/{backtest,tournament,signal_lab,rigor}  on-demand validation
    → render/  Markdown notes + self-contained Dashboard.html
    ↑ cli/track.py  drives it all, doctor-gated
@@ -70,7 +70,7 @@ cp .env.example .env          # defaults are paper/mock; set VAULT_PATH to your 
 export VAULT_PATH="$HOME/Obsidian/Investment_AI"
 
 ./track doctor                # preflight (cache local, vault reachable)
-./track seed --full           # first run: seed the 220-stock universe (~30 min, network)
+./track seed --full           # first run: seed the 217-stock universe (~30 min, network)
 ./track screen                # regime-aware screen (weekly; ~minutes)
 ./track report                # render Markdown + Dashboard.html into the vault
 ./track tournament            # race ~20 strategy variants over history (~15-25 min)
@@ -78,8 +78,14 @@ export VAULT_PATH="$HOME/Obsidian/Investment_AI"
 ./track status                # quick terminal summary
 ```
 
-No Obsidian? The engine still runs and `./track status` / the validation commands
-print to the terminal; `Dashboard.html` opens standalone in any browser.
+No Obsidian? Point `VAULT_PATH` at any local folder — `./track report` writes the
+notes + `Dashboard.html` there, and `./track status` / the validation commands
+print to the terminal. `Dashboard.html` opens standalone in any browser.
+
+Requires **Python 3.11+**. The two heavy overlays are opt-in and kept in separate
+requirements files: FinBERT news sentiment (`requirements-sentiment.txt`, pulls
+torch/transformers, ~2 GB) and the AI co-pilot (`requirements-copilot.txt`, the
+Anthropic SDK). The core screener + validation + dashboard need neither.
 
 ## Tests
 

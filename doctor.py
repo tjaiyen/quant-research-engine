@@ -143,30 +143,42 @@ def check_store_local(store_dir: str | Path) -> dict:
     }
 
 
-def check_vault_canonical(vault_dir: str | Path) -> dict:
-    """VAULT must be the canonical synced 'My Drive 2' mount AND exist."""
+def check_vault_canonical(vault_dir: str | Path, explicit: bool = False) -> dict:
+    """Validate the render target.
+
+    Two modes: when the user explicitly sets ``VAULT_PATH`` (``explicit=True``),
+    any existing, writable directory is accepted — point it at your own Obsidian
+    vault wherever it lives. When falling back to the default (``explicit=False``),
+    the maintainer's stricter off-Drive posture applies: the vault must be the
+    canonical Google-Drive CloudStorage mount (so notes land on the synced copy,
+    not an orphaned local one). The store-local check enforces the real
+    off-Drive invariant in both modes.
+    """
     abs_path = _real(vault_dir)
     hay = str(abs_path).lower()
     reasons: list[str] = []
 
-    # 1) Must be ON a sync mount (the vault SHOULD live on Drive).
-    on_sync, _ = _is_synced(abs_path)
-    if not on_sync:
-        reasons.append("vault is NOT on a cloud-sync mount (expected Google Drive)")
-    # 2) Must be the CloudStorage File Stream mount, NOT the orphaned ~/My Drive
-    #    home copy. The 'My Drive'/'My Drive 2' suffix is VOLATILE (Drive flips
-    #    it; resolve_vault_dir self-heals it) — the load-bearing marker is the
-    #    CloudStorage path, not the literal ' 2'.
-    if "/library/cloudstorage/googledrive-" not in hay:
-        reasons.append(
-            "vault is not the CloudStorage File Stream mount "
-            "(a bare ~/My Drive path is the orphaned, non-synced copy)"
-        )
-    # 3) Must actually exist.
+    # Always: the vault must exist and be writable (catches an unmounted Drive,
+    # a typo'd VAULT_PATH, or a read-only path).
     if not abs_path.exists():
-        reasons.append("vault path does not exist on disk — if this is a fresh "
-                       "start or right after a reboot, Google Drive may not have "
-                       "finished syncing the mount yet; wait and retry")
+        reasons.append("vault path does not exist on disk — set VAULT_PATH to your "
+                       "Obsidian vault, or (on Drive) wait for the mount to finish "
+                       "syncing and retry")
+    elif not os.access(abs_path, os.W_OK):
+        reasons.append("vault path exists but is not writable")
+
+    # Only for the maintainer default (no explicit VAULT_PATH): require the
+    # synced CloudStorage mount, not an orphaned local copy.
+    if not explicit and abs_path.exists():
+        on_sync, _ = _is_synced(abs_path)
+        if not on_sync:
+            reasons.append("vault is NOT on a cloud-sync mount (set VAULT_PATH to "
+                           "your Obsidian vault to use any local folder)")
+        elif "/library/cloudstorage/googledrive-" not in hay:
+            reasons.append(
+                "vault is not the CloudStorage File Stream mount "
+                "(a bare ~/My Drive path is the orphaned, non-synced copy)"
+            )
 
     return {
         "role": "vault",
@@ -197,7 +209,8 @@ def resolve_vault_dir() -> Path:
 
 def run() -> dict:
     store = check_store_local(resolve_store_dir())
-    vault = check_vault_canonical(resolve_vault_dir())
+    explicit_vault = bool(os.getenv("VAULT_PATH", "").strip())
+    vault = check_vault_canonical(resolve_vault_dir(), explicit=explicit_vault)
     results = [store, vault]
     return {"all_safe": all(r["safe"] for r in results), "results": results}
 
