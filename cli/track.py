@@ -112,6 +112,25 @@ def cmd_paper(args: argparse.Namespace) -> int:
     if args.action == "stop":
         from auto_trader.scripts.emergency_stop import main as run
         return run(["--clear"] if args.clear else [])
+    if args.action == "repair":
+        import os
+        from pathlib import Path
+        from mock_broker import repair_to_real_entry
+        state = os.getenv("MOCK_BROKER_STATE",
+                          str(REPO_ROOT / "store" / "mock_broker.json"))
+        changed = repair_to_real_entry(state)
+        if not changed:
+            print("Paper repair: nothing to fix (already real, or no cached "
+                  "entry prices). Run `track paper monitor` to refresh marks.")
+            return 0
+        print(f"Repaired {len(changed)} position(s) to real entry prices "
+              f"(dollars preserved):")
+        for c in changed:
+            print(f"  {c['ticker']:<6} entry ${c['entry_price']:.2f} "
+                  f"({c['entry_date']}) · {c['shares']:.3f} sh · "
+                  f"${c['dollars']:.0f} invested")
+        print("→ run `track paper monitor` then `track report` to mark-to-market.")
+        return 0
     print(f"unknown paper action: {args.action}", file=sys.stderr)
     return 2
 
@@ -564,7 +583,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_screen)
 
     pa = sub.add_parser("paper", help="paper-trading cycles (mock broker)")
-    pa.add_argument("action", choices=["monitor", "cycle", "stop"])
+    pa.add_argument("action", choices=["monitor", "cycle", "stop", "repair"])
     pa.add_argument("--clear", action="store_true", help="(stop) clear the halt flag")
     pa.set_defaults(func=cmd_paper)
 

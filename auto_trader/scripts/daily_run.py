@@ -104,8 +104,10 @@ def run_daily_monitor() -> dict:
     except Exception:
         pass
 
-    peak = get_peak_portfolio_value()
-    drawdown = (peak - account["portfolio_value"]) / max(peak, 1.0)
+    # Peak must include today's value, else a cold snapshots table (peak=0)
+    # yields an absurd drawdown like (0-10000)/1 = -10000 (=-1,000,000%).
+    peak = max(get_peak_portfolio_value(), account["portfolio_value"])
+    drawdown = (peak - account["portfolio_value"]) / peak if peak > 0 else 0.0
 
     snapshot = {
         "total_value": account["portfolio_value"],

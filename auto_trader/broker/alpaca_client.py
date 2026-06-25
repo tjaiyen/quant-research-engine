@@ -75,8 +75,9 @@ def get_client() -> Any:
             "MOCK_BROKER_STATE",
             str(Path(__file__).resolve().parents[2] / "store" / "mock_broker.json"),
         )
-        _client = MockAlpacaClient(state_path=state_path)
-        logger.info("Alpaca client: MOCK (file-backed paper account: %s)", state_path)
+        _client = MockAlpacaClient(state_path=state_path, mark_to_market=True)
+        logger.info("Alpaca client: MOCK (file-backed paper account, "
+                    "mark-to-market: %s)", state_path)
         # Smoke-check the surface
         acct = _client.get_account()
         logger.info(
