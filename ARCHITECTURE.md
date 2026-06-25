@@ -1,70 +1,64 @@
 # Architecture
 
-Single-process Dash app with a SQLite backend. Heavy compute is pure-Python;
-no async, no external services beyond yfinance for data.
+A local, single-process Python engine with a SQLite cache. Heavy compute is
+pure-Python (no async, no services beyond yfinance for data). There is **no web
+server and no hosting** — a CLI runs the engine on a schedule and renders the
+results as Markdown + a self-contained HTML dashboard into an Obsidian vault.
+
+> History: the analytical engine was ported from an earlier Dash/Plotly web app
+> ("Quant Cockpit") on Fly.io. The web shell (`ui/`, `app.py`, `Dockerfile`,
+> `fly.toml`, gunicorn) was dropped; the engine below is what was kept and grown.
 
 ## Data flow
 
 ```
-                        ┌─────────────────────┐
-                        │  yfinance (Yahoo)   │
-                        └──────────┬──────────┘
-                                   │
-                                   ▼
-                  ┌────────────────────────────────┐
-                  │ data_providers/                │  ← FROZEN; not modified directly
-                  │ yfinance_provider.py           │
-                  └──────────┬─────────────────────┘
-                             │
-                  ┌──────────▼──────────┐
-                  │ data_fetcher.py     │  ← Tier detection + feature gating
-                  └──────────┬──────────┘
-                             │
-       ┌─────────────────────┼─────────────────────┐
-       │                     │                     │
-       ▼                     ▼                     ▼
- tasks/refresh_     tasks/refresh_         tasks/precompute_
-   prices.py        sectors.py              mc.py
-       │                     │                     │
-       └─────────────────────┴─────────────────────┘
-                             │
+        ┌─────────────────────┐
+        │  yfinance (Yahoo)   │
+        └──────────┬──────────┘
+                   ▼
+   ┌────────────────────────────────┐
+   │ data_providers/                │  ← FROZEN; never edited directly
+   │ yfinance_provider.py           │
+   └──────────┬─────────────────────┘
+              ▼
+   ┌─────────────────────┐
+   │ data_fetcher.py     │  ← yfinance→Stooq fallback (U8), tier gating
+   └──────────┬──────────┘
+              ▼
+   ┌──────────────────────────────────────┐
+   │ store/cockpit.sqlite   (off-Drive)   │  prices · fundamentals · holdings
+   │ store/portfolio.db                   │  earnings_calendar · news_sentiment
+   │ (WAL, timeout=30; rebuildable cache) │  company_health · screener_runs/results
+   └──────────┬───────────────────────────┘
+              ▼
+   ┌──────────────────────────────────────────────────────────────┐
+   │ screener/  (the intelligence)                                 │
+   │   regime/hmm_*          → market regime (bull/sideways/bear)  │
+   │   signals/{arima,kalman,garch,monte_carlo,sharpe,momentum}    │
+   │   engine/composite_scorer + industry_ranker                   │
+   │     → 5-signal regime-weighted composite, per-sector ranking  │
+   │   engine/*_guard (8 vetoes: earnings blackout, stale, …)      │
+   └──────────┬───────────────────────────────────────────────────┘
+              ▼
+   ┌────────────────────────────┐        ┌──────────────────────────────┐
+   │ auto_trader/  (paper only) │        │ screener/{backtest,tournament,│
+   │   broker/mock  + ledger    │        │   signal_lab, rigor}          │
+   │   risk/ 8 guards           │        │   walk-forward · IC · DSR ·   │
+   │   allocator/kelly_sizing   │        │   CPCV · cost haircut         │
+   │   monitor/ decay + stops   │        │   (on-demand validation)      │
+   └──────────┬─────────────────┘        └──────────────┬───────────────┘
+              └──────────────┬──────────────────────────┘
                              ▼
-                  ┌──────────────────────────┐
-                  │ db/cockpit.sqlite        │
-                  │   tickers · prices       │
-                  │   fundamentals · holdings│
-                  │   mc_results             │
-                  │   valuation_cache        │
-                  │   sector_perf            │
-                  │  (WAL mode, timeout=30)  │
-                  └──────────┬───────────────┘
-                             │
-   ┌─────────────────────────┼──────────────────────────┐
-   ▼              ▼          ▼            ▼             ▼
-models_*    fundamental.py  models_   sector_      quant_models.py
-(per-ticker  + industry_   portfolio  rotation.py   (HMM, BS,
- signals)    config.py)     .py                     MC reader)
-   │              │          │            │             │
-   └──────────────┼──────────┴────────────┴─────────────┘
-                  │
-       ┌──────────▼──────────┐
-       │ scoring_legacy.py   │  ← 0–1 composite (Overview)
-       │ scoring_ars.py      │  ← 0–100 ARS (Tab 6)
-       │ suggestions.py      │  ← trim/add engine
-       └──────────┬──────────┘
-                  │
-                  ▼
-       ┌──────────────────────────────────────┐
-       │ ui/  components, metrics             │
-       │      technical, fundamental_tab      │
-       │      sector_tab, ars_tab, portfolio  │
-       └──────────┬───────────────────────────┘
-                  │
-                  ▼
-            app.py  (Dash entrypoint, 6 tabs)
-                  │
-                  ▼
-        http://127.0.0.1:8050
+        ┌────────────────────────────────────────────┐
+        │ render/  (the surface)                      │
+        │   notes.py / build.py → Markdown + frontmat.│
+        │   html.py → self-contained Dashboard.html   │
+        │   glossary.py → educational definitions     │
+        └──────────┬─────────────────────────────────┘
+                   ▼
+        Obsidian vault  ·  90 Tracker/*.md + Dashboard.html
+                   ▲
+        cli/track.py  ──  the driver (doctor-gated rituals)
 ```
 
 ## Module responsibilities
@@ -72,128 +66,79 @@ models_*    fundamental.py  models_   sector_      quant_models.py
 ### Data layer
 | Module | Responsibility |
 |---|---|
-| `data_providers/yfinance_provider.py` | **FROZEN** — Fetch daily adjusted prices + `.info` fundamentals. Pure. |
-| `data_fetcher.py` | Wraps `yfinance_provider`. 3-tier confidence detection, feature gating, re-exports. |
-| `utils/db.py` | SQLite connection (WAL, timeout=30), idempotent upserts, row→DataFrame reads. |
-| `utils/config.py` | `.env` loading, typed settings. |
-| `utils/logging_setup.py` | Rotating file + console logger. |
-| `schema.sql` (repo root) | Source of truth for table structure. **Additive only**, never DROP. Lives at the repo root, NOT under `db/`, so the production volume mount at `/app/db` does not shadow it. |
+| `data_providers/yfinance_provider.py` | **FROZEN** — daily adjusted prices + `.info` fundamentals. Pure; never edited. |
+| `data_providers/stooq_provider.py` | Emergency price fallback (matches the yfinance schema). |
+| `data_fetcher.py` | Chokepoint over the providers: yfinance→Stooq fallback, tier gating, re-exports. |
+| `utils/db.py` | SQLite connection (WAL, `timeout=30`), idempotent upserts, row→DataFrame reads. |
+| `utils/config.py` | `.env` loading (incl. `VAULT_PATH`), typed settings. |
+| `schema.sql` (repo root) | Source of truth for table structure. **Additive only**, never DROP. |
 
-### Signal layer (per-ticker)
-| Module | Input | Output |
-|---|---|---|
-| `models_technical.py` | Price DataFrame | `TechnicalSignals` (trend, RSI, MACD, momentum) |
-| `models_quant.py` | Price DataFrame | `RiskSignals` (vol, drawdown, regime) |
-| `models_fundamental.py` | Fundamentals snapshot + peer context | `ValuationSignals` (peer-relative bands) |
-| `fundamental.py` | Fundamentals snapshot + price | `FundamentalValuation` (DCF + DDM + multiples + composite) |
-| `quant_models.py` | Price DataFrame | `RegimeResult` (HMM or rolling-vol) + Black-Scholes pricing |
-
-### Aggregate layer
-| Function | Output | Math |
-|---|---|---|
-| `build_portfolio()` | `PortfolioSummary` | Σ shares × last adj_close; HHI |
-| `simulate_portfolio()` | `PortfolioSimulation` | Correlated GBM Monte Carlo |
-| `compute_risk_contributions()` | `list[RiskContribution]` | Component CVaR (Euler, tail-conditional) |
-| `compute_benchmark_comparison()` | `BenchmarkComparison` | OLS regression of portfolio returns on SPY |
-| `compute_position_attributions()` | `list[PositionAttribution]` | Per-ticker CAPM regression vs SPY |
-| `compute_stress_scenarios()` | `list[StressResult]` | Same MC, regime-specific Σ |
-| `latest_sector_perf()` | `list[SectorRow]` | Most-recent sector_perf rows by score |
-
-### Decision layer
-| Module | Produces | Scale |
-|---|---|---|
-| `scoring_legacy.py` | `CompositeScore` (Overview chips, watchlist ranking) | 0–1 |
-| `scoring_ars.py` | `ARSScore` (Tab 6 gauge + NL summary) | 0–100, 5 components, sector tilts |
-| `suggestions.py` | `TrimCandidate` / `AddCandidate` | both gated at 0.50 intensity |
-
-### UI layer
-| Module | Tab |
+### Signal layer (per-ticker, causal)
+| Module | Output |
 |---|---|
-| `ui/components.py` | Color tokens, KPI card, score chips, suggestions card (Tab 1 helpers) |
-| `ui/metrics.py` | Overview return calcs |
-| `ui/technical.py` | Tab 2 |
-| `ui/fundamental_tab.py` | Tab 3 (verdict chip, band chart, multiples table, DCF sensitivity, regime chip) |
-| `ui/sector_tab.py` | Tab 4 (signal table, RRG quadrant, returns heatmap, RS chart) |
-| `ui/ars_tab.py` | Tab 5 (gauge, NL card, component table, Top-N) |
-| `ui/portfolio.py` | Tab 6 (KPIs, benchmark, attribution, MC fan, stress comparison, risk contribution, holdings) |
+| `screener/regime/hmm_*` | `RegimeResult` — HMM market regime (bull / sideways / bear) + confidence. |
+| `screener/signals/arima_signal` … `sharpe_signal`, `momentum_signal` | One score in `[0,1]` per signal (ARIMA, Kalman, GARCH, Monte-Carlo, Sharpe, 12-1 momentum). |
+| `screener/engine/composite_scorer.py` | Regime-weighted 5-signal composite + the veto application. |
+| `screener/engine/*_guard.py` | 8 vetoes (earnings blackout, delisting/stale, sector exposure, …) — a veto zeroes the composite and is never relaxed. |
 
-### App shell
-| File | Role |
+### Aggregate / selection layer
+| Module | Output |
 |---|---|
-| `app.py` | Layout, **6 tabs**, callbacks, global tier badge in header |
+| `screener/engine/industry_ranker.py` | Per-sector top-N ranking from the composite (the screener's picks). |
+| `auto_trader/allocator/kelly_sizing.py` | Position sizing from conviction + risk. |
+| `auto_trader/risk/*` | The 8 risk guards run before any (paper) fill. |
+| `auto_trader/state/portfolio_db.py` | Append-only paper ledger: positions, fills, equity-curve snapshots, system events. |
 
-## Frozen infrastructure
+### Validation layer (on-demand, off the hot path)
+| Module | Produces |
+|---|---|
+| `screener/backtest/*` | Walk-forward lift, signal IC, regime predictive power, strategy portfolio sim. |
+| `screener/tournament/*` | ~20 strategy variants raced over history (causal panel), winner + attribution. |
+| `screener/signal_lab/*` | Per-signal IC, quintile spread, Bonferroni-corrected significance flag. |
+| `screener/rigor/*` | Transaction-cost haircut, Deflated Sharpe Ratio, Combinatorial Purged CV. |
 
-These files must not be modified:
-- `Dockerfile`, `fly.toml`, `.dockerignore`, `DEPLOY.md`
-- `tasks/refresh_prices.py`, `tasks/manage_holdings.py`
-- Docker `HEALTHCHECK curl /` endpoint
-- Gunicorn entrypoint (`from app import server`)
-- `data_providers/yfinance_provider.py`
-- Existing schema tables (`tickers`, `prices`, `fundamentals`, `holdings`)
+### Surface layer
+| Module | Role |
+|---|---|
+| `render/build.py` | Reads the cache + ledger, assembles the data, writes every note atomically. |
+| `render/notes.py` | Pure engine-object → Markdown (YAML frontmatter for Dataview). |
+| `render/html.py` | Pure → a single self-contained `Dashboard.html` (inline CSS/JS, hand-rolled SVG charts, tooltips + glossary; no external libraries). |
+| `render/glossary.py` | One definition registry; a completeness gate fails the build if any metric ships without a `?`. |
+| `cli/track.py` | The driver — `doctor · refresh · seed · screen · paper · report · score · backtest · tournament · …`. |
 
-## Cache-only Monte Carlo policy
+## Invariants & governance
 
-Monte Carlo is expensive and must never run live in a Dash callback. The flow is:
+**Off-Drive invariant.** Code, venv, and the SQLite cache live in the repo
+(off any cloud-synced folder); only the rendered Markdown + HTML live in the
+Obsidian vault. `doctor.py` enforces this (store on a local filesystem, vault on
+the sync mount) and runs before every DB/vault-touching command.
 
-```
-tasks/precompute_mc.py  →  mc_results table  →  quant_models.fetch_cached_mc()  →  UI
-   (writes only)            (cache)              (reads only)                       (renders)
-```
+**Frozen provider / additive schema.** `data_providers/yfinance_provider.py` is
+never modified; new data needs (sentiment, health, earnings) add their own
+fetchers. `schema.sql` is `CREATE TABLE IF NOT EXISTS` only — never an ALTER or
+DROP — so `init_db()` is idempotent across versions.
 
-`models_portfolio.simulate_portfolio()` is the legacy live path — kept for the
-Portfolio tab callback that already exists. New MC consumers must read the
-cache through `quant_models`.
+**Paper-only.** `auto_trader` defaults to a mock broker. The two hard
+live-trading gates in `auto_trader/credentials.py` (a minimum paper duration +
+an explicit `LIVE_TRADING_CONFIRMED` token) are preserved and never weakened.
+
+**Untrusted external data = data, never instructions.** All yfinance / scraped
+text is treated as data; the renderer only ever *writes* derived notes and never
+reads vault notes back as instructions. User-supplied strings (tickers, regime
+labels) are HTML-escaped in the dashboard.
+
+**Numerical discipline.** Deterministic seeds in Monte-Carlo / clustering;
+portfolio weights sum to 1.0 or are `None` (never faked); validation is
+in-sample-aware and reported with controls (SPY / random) — the engine is framed
+as evidence of method, not a profit claim.
 
 ## SQLite governance
+- **WAL mode** + `timeout=30s` on every connection (concurrent reads + one writer).
+- All schema additions are `CREATE TABLE IF NOT EXISTS`; migration runs on every
+  `init_db()` (idempotent). The cache is rebuildable from yfinance — never the
+  source of truth.
 
-- **WAL mode** (`PRAGMA journal_mode=WAL`) enabled in `_connect()`.
-- **timeout=30** seconds on every connection — pairs with WAL to allow
-  concurrent reads + one writer without lock starvation.
-- All schema additions are `CREATE TABLE IF NOT EXISTS`. Never drop.
-- Migration runs on every `init_db()` call (idempotent).
-
-## Data tier gating
-
-`data_fetcher.detect_data_tier()` returns 1, 2, or 3 based on env keys:
-
-| Tier | Trigger | Confidence | Disabled features |
-|---|---|---|---|
-| 1 | `REFINITIV_API_KEY` or `BLOOMBERG_API_KEY` set | 1.00 | none |
-| 2 | `FMP_API_KEY` or `POLYGON_API_KEY` set | 0.75 | iv_surface, intraday_bars, consensus, fundamentals_history |
-| 3 | yfinance default (current) | 0.50 | + forward_peg, ev_ebitda_history, options_chain, earnings_surprises |
-
-The badge `⚠️ REDUCED DATA CONFIDENCE` appears in the global header at Tier 3.
-
-## Numerical governance
-
-- Scoring outputs in `[0, 1]` (legacy) or `[0, 100]` (ARS) — verified in health check.
-- Portfolio weights sum to 1.0 (or `None` — never fake).
-- SPY self-regression is a built-in unit test: β≈1, α≈0, R²≈1.
-- Component CVaR satisfies `Σ_i C_i = portfolio CVaR` (linearity of expectation).
-- Stress regimes verified to produce VaR ≥ 0.8× baseline.
-- Deterministic seed (`42`) in Monte Carlo.
-
-## Concurrency model
-
-- Single-process Dash with debug reloader during dev.
-- SQLite WAL mode + 30s timeout for safe concurrent read + one writer.
-- Live compute (signals, scoring, fundamental valuation) ≈ 100 ms per ticker.
-- Live MC is forbidden — read from cache.
-- Heavy callbacks wrapped in `dcc.Loading`.
-- Production: gunicorn with **workers=1** until memory profiled post-deploy.
-
-## Adding a new tab
-
-1. Create `ui/<name>_tab.py` with a `<name>_tab_content(...)` builder.
-2. Add a `dcc.Tab(label=..., value=...)` to the `tabs` list in `app.py`.
-3. Add a placeholder `html.Div(id=...)` and route it in `_render_tab`.
-4. Add a callback bound to `Input("ticker-picker", "value")` and/or `Input("main-tabs", "value")` that returns the rendered content.
-
-## Adding a new signal dimension
-
-1. Create a new `models_<name>.py` returning a frozen dataclass.
-2. Add a constant to `BASE_WEIGHTS` in `scoring_ars.py` and a tilt entry in
-   `industry_config.WeightTilt`.
-3. Extend `compute_ars()` to source the new component.
-4. Add a chip / column in `ui/ars_tab.py:component_breakdown`.
+## Scheduling
+`bin/scheduled-run.sh <daily|weekly|monthly>` + three `deploy/*.plist` launchd
+agents run the cadence (weekly screen, daily monitor, monthly buy cycle), each
+doctor-gated, idempotent, with no missed-run catch-up (cold-start safe).

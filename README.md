@@ -1,70 +1,101 @@
 # Quant Tracker
 
-An **Obsidian-native paper-trading research system**. The regime-aware screener,
-signal models, risk guards, and paper auto-trader ported from the *Quant Cockpit*
-(its Dash/Plotly web shell and Fly.io deployment were dropped) — driven by a local
-CLI that renders all results as Markdown into an Obsidian vault. No web server,
-no hosting.
+A local, paper-only **equity research engine**: a regime-aware screener (HMM +
+five quantitative signals + an 8-guard veto layer) feeding a paper auto-trader,
+with the results rendered as a self-contained HTML dashboard and Markdown notes
+in an Obsidian vault. No web server, no hosting, no API keys to run the screener.
 
-Built for educational/research use. Paper-trading only. **Not investment advice.**
+What makes it more than a backtest toy is the **validation layer**: the engine
+doesn't just produce picks, it measures — honestly — whether those picks have any
+edge, using walk-forward cross-validation, a strategy tournament, per-signal
+Information Coefficients, transaction-cost haircuts, the Deflated Sharpe Ratio,
+and Combinatorial Purged Cross-Validation.
 
-## Architecture
+**The honest result:** on 3 years of daily data, the portfolio-level edge
+*survives* the multiple-comparison-corrected Deflated Sharpe test (DSR ≈ 0.99) and
+is **not** cost-fragile (low turnover), but **no individual signal clears a
+Bonferroni-corrected significance bar** (ARIMA's IC info-ratio is +2.13, under the
+2.58 threshold). So the conclusion the tool reaches about itself is: *suggestive,
+not proven — re-weighting five weak signals can't manufacture an edge; the real
+next step is new signals, and forward paper data is the arbiter.* Building the
+thing is half the work; **proving what it is and isn't** is the other half.
 
-- **Engine** (ported, off-Drive): `screener/` (HMM regime + ARIMA/Kalman/GARCH/
-  Monte-Carlo/Sharpe + 8-guard veto), `auto_trader/` (mock broker, risk guards,
-  Kelly-style sizing, append-only ledger), `models_*`/`fundamental`/`quant_models`/
-  `scoring_*` (signals + valuation + scoring), `tasks/` (yfinance refresh).
-- **Store** (off-Drive, rebuildable): SQLite under `store/` — `cockpit.sqlite`
-  (prices, fundamentals, screener runs) + `portfolio.db` (paper positions, fills,
-  equity curve). Never committed; never on Drive.
-- **Renderer** (new): `render/` turns engine objects into Markdown notes with YAML
-  frontmatter and writes them atomically into the vault's `90 Tracker/` folder,
-  where **Dataview** renders the dashboards.
-- **CLI** (new): `cli/track.py` — the engine driver.
+> Paper-trading research only. **Not investment advice.** No real-money execution.
 
-The **off-Drive invariant**: code, venv, and SQLite live here at
-`~/dev/quant-tracker`; only Markdown lives in the Google-Drive vault. `doctor.py`
-enforces it and runs before every DB/vault-touching command.
+## What this demonstrates
+
+- **Quantitative modeling** — an HMM market-regime classifier; a 5-signal
+  composite (ARIMA, Kalman filter, GARCH, Monte-Carlo, Sharpe) blended by regime;
+  a 12-1 momentum signal IC-gated and held pending forward evidence.
+- **Validation rigor** — walk-forward, IC + quintile spread, a 20-variant
+  strategy tournament with controls (SPY / random), cost haircuts, **Deflated
+  Sharpe Ratio** and **Combinatorial Purged CV** (De Prado), and Bonferroni
+  multiple-testing correction. The codebase argues *against itself* where the
+  evidence is weak.
+- **Systems & engineering discipline** — a frozen data-provider boundary, an
+  additive-only SQLite schema, a deterministic doctor preflight that enforces an
+  off-disk-cache invariant, an append-only paper ledger, ~180 tests, and
+  launchd-scheduled autonomous runs.
+- **Self-contained tooling** — a single `Dashboard.html` with hand-rolled inline
+  SVG charts, tooltips, a learn-mode, and a glossary — zero external JS/CSS,
+  works offline.
+
+> **▶ See it:** open **[`examples/Dashboard.html`](examples/Dashboard.html)** in a
+> browser (download raw, or clone and open the file) — a real rendered dashboard
+> with the equity curve, regime, signal attribution, sector breakdown, and the
+> validation cards. One file, no dependencies.
+
+## Architecture (60-second version)
+
+```
+yfinance → data_fetcher (Stooq fallback) → SQLite cache (off-disk)
+   → screener/  HMM regime + 5 signals + 8 vetoes → per-sector ranking
+   → auto_trader/  mock broker + 8 risk guards + Kelly sizing + append-only ledger
+   → screener/{backtest,tournament,signal_lab,rigor}  on-demand validation
+   → render/  Markdown notes + self-contained Dashboard.html
+   ↑ cli/track.py  drives it all, doctor-gated
+```
+
+Full detail in **[ARCHITECTURE.md](ARCHITECTURE.md)**; the engineering story and
+the honest edge analysis in **[docs/CASE_STUDY.md](docs/CASE_STUDY.md)**.
 
 ## Quick start
 
 ```bash
-cd ~/dev/quant-tracker
+git clone <this-repo> quant-tracker && cd quant-tracker
 python3 -m venv .venv && ./.venv/bin/python -m pip install -r requirements.txt
-cp .env.example .env   # defaults are paper/mock; DBs point at store/
+cp .env.example .env          # defaults are paper/mock; set VAULT_PATH to your Obsidian vault
 
-./track doctor         # off-Drive preflight (store local, vault canonical)
-./track refresh        # pull watchlist prices + sector ETF performance (daily)
-./track seed --full    # first run: seed the 220-stock universe into the cache (~30 min)
-./track screen         # run the regime-aware screener (weekly; ~minutes, network)
-./track paper monitor  # daily: stops, decay rescore, equity snapshot
-./track paper cycle    # monthly buy cycle (no-op outside the 1st–5th window)
-./track report         # regenerate the Obsidian notes in `90 Tracker/`
-./track score          # grade past picks vs actual returns (Scorecard.md)
-./track backtest       # retrospective skill check (Backtest.md; ~15 min, sampled)
-./track status         # quick terminal summary
+# Render targets an Obsidian vault. Point VAULT_PATH at it (any folder works):
+export VAULT_PATH="$HOME/Obsidian/Investment_AI"
+
+./track doctor                # preflight (cache local, vault reachable)
+./track seed --full           # first run: seed the 220-stock universe (~30 min, network)
+./track screen                # regime-aware screen (weekly; ~minutes)
+./track report                # render Markdown + Dashboard.html into the vault
+./track tournament            # race ~20 strategy variants over history (~15-25 min)
+./track signal-lab            # per-signal IC + Bonferroni significance
+./track status                # quick terminal summary
 ```
 
-## Vault output (`Investment_AI/90 Tracker/`)
-
-`Dashboard.md` · `Regime.md` · `Screener/Run-<date>.md` · `Positions/<TICKER>.md` ·
-`Journal/<date>.md` · `Performance.md` — all auto-generated; do not hand-edit.
-Dashboard/Performance need the Dataview community plugin.
+No Obsidian? The engine still runs and `./track status` / the validation commands
+print to the terminal; `Dashboard.html` opens standalone in any browser.
 
 ## Tests
 
 ```bash
-./.venv/bin/python -m pytest -q                                  # engine + render
+./.venv/bin/python -m pytest -q                                  # engine + render (~180 tests)
 TRADER_DB_PATH=store/test.db ./.venv/bin/python -m pytest auto_trader/tests -q
 ```
 
 ## Safety
 
 Paper-only by default (`TRADING_MODE=paper`, `ALPACA_USE_MOCK=true`). The two hard
-live-trading gates in `auto_trader/credentials.py` (3-month paper duration +
-explicit `LIVE_TRADING_CONFIRMED`) are preserved unchanged. Tier-3 yfinance data
-carries forward (forward PEG / IV surface / consensus stay gated).
+live-trading gates in `auto_trader/credentials.py` (minimum paper duration +
+explicit `LIVE_TRADING_CONFIRMED`) are preserved unchanged. Data is Tier-3
+yfinance (free, daily); forward-PEG / IV-surface / consensus features stay gated.
+Nothing here is financial advice.
 
-> Data flow and module responsibilities are documented in
-> [ARCHITECTURE.md](ARCHITECTURE.md) (describes the ported engine layers; the
-> Dash UI layer it references has been removed).
+## License
+
+[MIT](LICENSE).
