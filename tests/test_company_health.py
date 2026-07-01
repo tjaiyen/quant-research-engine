@@ -52,7 +52,7 @@ def test_health_note_and_section_render():
     assert "no health data yet" in notes.company_health_note({"rows": []}).lower()
     out = html._company_health_section(rows)
     assert "Company health" in out and "GD" in out and "2026-07-23" in out
-    assert "class='pos'" in out                         # STRONG → green
+    assert "mono small pos" in out                      # STRONG → green tone
     assert html._company_health_section([]) == ""       # empty → nothing
 
 
@@ -95,4 +95,4 @@ def test_earnings_renders_in_note_and_section():
     md = notes.company_health_note({"as_of": "x", "rows": rows})
     assert "Last earnings" in md and "Recent earnings" in md and "beat" in md and "miss" in md
     out = html._company_health_section(rows)
-    assert "Last earnings" in out and "+4.7% beat" in out and "class='pos'" in out
+    assert "Last earnings" in out and "+4.7% beat" in out and "right mono pos" in out

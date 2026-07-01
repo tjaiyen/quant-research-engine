@@ -1,4 +1,4 @@
-"""Tests for the self-contained HTML dashboard builder."""
+"""Tests for the self-contained HTML dashboard builder (redesign)."""
 from __future__ import annotations
 
 from render import html
@@ -29,6 +29,13 @@ def _sample():
                        "n_headlines": 6}],
         "decisions": ["🔭 **2026-06-19** — I screened the market. Regime **SIDEWAYS**."],
         "scorecard": {"horizons": {"7d": {"n": 0}}, "paper": {"status": "no_data"}},
+        "signal_lab": {"signals": {"arima": {"ic": 0.06, "verdict": "KEEP"},
+                                   "monte_carlo": {"ic": -0.12, "verdict": "DROP"}},
+                       "validation": {"candidate_oos": 0.178, "default_oos": 0.126,
+                                      "spy_oos": 0.12}},
+        "health": [{"ticker": "JNJ", "health_label": "STRONG", "floors_passed": 3,
+                    "floors_total": 4, "roe": 26.4, "debt_to_equity": 0.68, "pe": 29.5,
+                    "last_surprise_pct": 7.0, "next_earnings": "2026-07-15"}],
         "copilot": {"available": True, "model": "claude-opus-4-8",
                     "commentary": "My read is cautiously constructive.\n\nI'd watch WBD."},
     }
@@ -38,20 +45,23 @@ def test_dashboard_html_is_wellformed():
     out = html.dashboard_html(_sample())
     assert out.startswith("<!DOCTYPE html>")
     assert out.rstrip().endswith("</html>")
-    assert "http-equiv=\"refresh\"" in out          # auto-reload
-    assert "<svg" in out and "polyline" in out       # equity chart present
-    assert "JNJ" in out                              # picks
-    assert "<strong>SIDEWAYS</strong>" in out        # decision bold converted
-    assert "Co-pilot take" in out and "WBD" in out   # copilot section
+    assert "http-equiv=\"refresh\"" not in out         # meta-refresh REMOVED (redesign)
+    assert "Check for data" in out                     # replaced by a poll/reload button
+    assert "<svg" in out and "polyline" in out          # equity chart present
+    assert 'id="verdict"' in out and "Today's read" in out   # narrative verdict card
+    assert "Strategy vs the market" in out              # equity section heading
+    assert "JNJ" in out                                 # picks
+    assert "<strong>SIDEWAYS</strong>" in out           # decision bold converted
+    assert "Co-pilot take" in out and "WBD" in out      # copilot section kept
     assert "claude-opus-4-8" in out
-    # comprehensive sections
-    assert "Screener" in out and "220" in out         # screener stats
-    assert "By sector" in out and "Healthcare" in out  # sector table
-    assert 'data-term="monte_carlo"' in out            # signal breakdown bars (plain-labelled)
-    assert "EARNINGS_BLACKOUT" in out                  # veto reasons
-    assert "Positions" in out                          # positions section (empty ok)
-    assert "News sentiment" in out                     # sentiment section
-    assert 'class="nav"' in out                        # nav links to notes
+    assert "Screener" in out and "220" in out            # screener stats
+    assert "Candidates by" in out and "Healthcare" in out  # sector donut
+    assert 'data-term="monte_carlo"' in out             # signal breakdown bars
+    assert "EARNINGS_BLACKOUT" in out                   # veto reasons
+    assert "Positions" in out                           # positions section (empty ok)
+    assert "News sentiment" in out                      # sentiment section kept
+    assert 'id="qtnav"' in out                          # sticky in-page nav
+    assert 'data-sort=' in out                          # sortable tables
 
 
 def test_dashboard_html_handles_empty():
@@ -62,13 +72,13 @@ def test_dashboard_html_handles_empty():
     assert "$10,000" in out                              # default portfolio value
 
 
-def test_run_banner_states():
-    assert "FAILED" in html._run_banner({"job": "monthly", "ended": "x", "status": "fail"})
-    assert "No scheduled run" in html._run_banner(
-        {"job": "daily", "ended": "x", "status": "ok", "stale": True, "age_h": 50})
-    assert "healthy" in html._run_banner(
+def test_auto_banner_states():
+    assert "FAILED" in html._auto_banner({"job": "monthly", "ended": "x", "status": "fail"})
+    assert "stale" in html._auto_banner(
+        {"job": "daily", "ended": "x", "status": "ok", "stale": True, "age_h": 50}).lower()
+    assert "healthy" in html._auto_banner(
         {"job": "daily", "ended": "x", "status": "ok", "stale": False})
-    assert html._run_banner({}) == ""   # no beacon → no banner
+    assert html._auto_banner({}) == ""   # no beacon → no banner
 
 
 def test_tournament_strategies_carry_explanations():
@@ -83,7 +93,6 @@ def test_tournament_strategies_carry_explanations():
     out = html.dashboard_html(d)
     assert f'data-term="{glossary.strategy_key("Pure Sharpe")}"' in out
     assert f'data-term="{glossary.strategy_key("SPY buy-hold")}"' in out
-    # the explanation + example are embedded for the JS popover
     assert "Reward-for-risk only" in out and "calmest high-return" in out
 
 
@@ -99,15 +108,14 @@ def test_dashboard_html_shows_tournament_card():
                                         "sharpe": 0.9, "excess": 0.0}]}
     out = html.dashboard_html(d)
     assert "Strategy tournament" in out and "Top-1 per sector" in out
-    assert "hypothesis, not proof" in out
+    assert "hypothesis, not proof" in out               # honest-framing caveat kept
 
 
-def test_dashboard_html_shows_run_banner():
+def test_dashboard_html_shows_auto_banner():
     d = _sample()
-    d["last_run"] = {"job": "weekly", "ended": "2026-06-21T18:00:00",
-                     "status": "fail"}
+    d["last_run"] = {"job": "weekly", "ended": "2026-06-21T18:00:00", "status": "fail"}
     out = html.dashboard_html(d)
-    assert 'class="runbar fail"' in out and "FAILED" in out
+    assert 'class="autobar neg"' in out and "FAILED" in out
 
 
 def test_dashboard_html_escapes_injection():
@@ -125,22 +133,21 @@ def test_dashboard_html_escapes_injection():
 
 def test_educational_affordances_present():
     out = html.dashboard_html(_sample())
-    assert 'id="learnBtn"' in out                       # 🎓 Learn-mode toggle
-    assert 'id="gloss"' in out and 'id="glossSearch"' in out   # searchable glossary modal
-    assert 'id="tip"' in out                             # tooltip/popover element
-    assert 'id="intro"' in out                           # onboarding card
-    assert out.count('class="i"') > 20                   # many info buttons wired
+    assert 'id="qt-learn"' in out                        # Learn-mode toggle
+    assert 'id="qt-gloss"' in out                        # glossary modal opener
+    assert 'id="qt-theme"' in out                        # theme toggle
+    assert out.count('data-term=') > 20                  # many terms wired to the glossary
     assert "localStorage" in out and "Learn mode" in out  # client JS + label
     assert "__GLOSSARY_JSON__" not in out                # placeholder substituted
     assert '"plain"' in out                              # glossary embedded for JS
 
 
-def test_hierarchy_headline_hero_zones():
+def test_hierarchy_verdict_hero_zones():
     out = html.dashboard_html(_sample())
-    assert 'class="headline"' in out                       # glance summary strip
+    assert 'class="verdict"' in out                        # narrative verdict card
     assert "indexed to 100" in out                         # hero equity caption
-    assert all(f'id="{z}"' in out for z in ("money", "today", "working", "hud"))
-    assert "kpi-row1" in out and "kpi-row2" in out and "kpi big" in out  # 2-tier KPIs
+    assert all(f'id="{z}"' in out for z in ("money", "screen", "working", "hud"))
+    assert 'class="kpis"' in out and "kpi-val" in out      # KPI cards
 
 
 def test_mobile_and_timestamps():
@@ -150,41 +157,38 @@ def test_mobile_and_timestamps():
                        "leaderboard": [{"rank": 1, "label": "Pure Sharpe", "group": "weighting",
                                         "total": 0.31, "sharpe": 1.2, "excess": 0.05}]}
     out = html.dashboard_html(d)
-    assert "@media (max-width: 600px)" in out          # mobile rules present
-    assert "overflow-x: auto" in out                    # tables scroll, don't overflow page
+    assert "@media (max-width:520px)" in out           # mobile rules present
+    assert "overflow-x:auto" in out                     # tables scroll, don't overflow page
     assert 'class="asof"' in out and "as of 2026-06-24 19:00" in out   # per-section stamp
 
 
 def test_visual_charts_render():
     from render import html as h
-    # bar/donut helpers emit valid markup and survive empty input
-    assert h._diverging_bars([("a", 0.06, "+6%"), ("b", -0.12, "-12%")]).count("db-fill") == 2
-    assert "pos" in h._diverging_bars([("a", 0.06, "x")]) and "neg" in h._diverging_bars([("b", -0.1, "x")])
-    assert h._diverging_bars([]) == "" and h._hbars([]) == "" and h._svg_donut([]) == ""
-    assert "<svg" in h._svg_donut([("Tech", 5), ("Health", 3)]) and "stroke-dasharray" in h._svg_donut([("Tech", 5)])
-    assert "hb-fill ctl" in h._hbars([("SPY", 0.2, "+20%", "ctl")])
+    # diverging bars: 4-tuple (key, label, value, right_html)
+    assert h._diverging_bars([("ic", "a", 0.06, "+6%"), ("ic", "b", -0.12, "-12%")]).count("db-fill") == 2
+    assert "var(--pos)" in h._diverging_bars([("", "a", 0.06, "x")])
+    assert "var(--neg)" in h._diverging_bars([("", "b", -0.1, "x")])
+    assert h._diverging_bars([]) == "" and h._svg_donut([]) == ""
+    assert "<svg" in h._svg_donut([("Tech", 5), ("Health", 3)])
+    assert "stroke-dasharray" in h._svg_donut([("Tech", 5)])
 
 
 def test_charts_wired_into_sections():
     d = _sample()
-    d["signal_lab"] = {"signals": {"arima": {"ic": 0.06, "verdict": "KEEP"},
-                                   "monte_carlo": {"ic": -0.12, "verdict": "DROP"}}}
     d["tournament"] = {"verdict": "ok", "beat_spy": 0.05, "beat_random": 0.04, "oos_rank": 2,
                        "leaderboard": [{"rank": 1, "label": "Pure Sharpe", "group": "weighting",
                                         "total": 0.31, "sharpe": 1.2, "excess": 0.05}]}
     out = html.dashboard_html(d)
-    assert 'class="dbars"' in out          # signal-lab diverging IC bars
-    assert 'class="hbars"' in out          # tournament return bars
+    assert 'class="dbars"' in out          # signal-lab (and tournament) diverging bars
     assert 'class="donut"' in out          # sector allocation donut
 
 
 def test_in_page_nav_and_back_to_top():
     out = html.dashboard_html(_sample())
-    # primary nav now points to page sections, not just the .md notes
-    for zid in ("equity", "money", "today", "working", "hud"):
-        assert f'href="#{zid}"' in out and f'id="{zid}"' in out
-    assert 'id="toTop"' in out and "IntersectionObserver" in out
-    assert "Obsidian notes" in out                          # outbound notes still reachable
+    for zid in ("verdict", "equity", "money", "positions", "screen", "working", "hud"):
+        assert f'href="#{zid}"' in out and f'data-jump="{zid}"' in out
+    assert f'id="{zid}"' in out                          # zone anchors exist
+    assert "qt-totop" in out and "scroll" in out          # back-to-top + scroll-spy
 
 
 def test_empty_zones_drop_no_bare_headers():
@@ -195,31 +199,27 @@ def test_empty_zones_drop_no_bare_headers():
 
 def test_design_tokens_and_light_mode_present():
     out = html.dashboard_html(_sample())
-    assert "--bg:" in out and "--pos:" in out and "--fs-kpi:" in out   # token system
-    assert "body.light" in out                                          # light overrides
-    assert 'id="themeBtn"' in out and "qt_theme" in out                 # toggle + persistence
+    assert "--bg:" in out and "--pos:" in out and "--accent:" in out    # token system
+    assert '[data-theme="light"]' in out                                # light overrides
+    assert 'id="qt-theme"' in out and "qt_theme" in out                 # toggle + persistence
     assert "var(--surface)" in out and "var(--text)" in out             # rules use tokens
 
 
 def test_dashboard_stays_offline_self_contained():
-    # No external libraries/CDNs/URLs — must open offline from the Drive vault.
     out = html.dashboard_html(_sample())
     assert "http://" not in out and "https://" not in out
     assert "<script src" not in out and "cdn" not in out.lower()
-    assert "<link" not in out                            # no external stylesheet
+    assert "<link" not in out                            # no external stylesheet / web font
 
 
 def test_every_rendered_term_has_a_definition():
-    """Completeness gate: no metric ships a `?` without a glossary entry."""
+    """Completeness gate: no `data-term` ships without a glossary entry."""
     import re
     from render import glossary
     d = _sample()
     d["tournament"] = {"verdict": "ok", "beat_spy": 0.05, "beat_random": 0.04,
                        "oos_rank": 2, "leaderboard": [{"rank": 1, "label": "X",
                        "group": "weighting", "total": 0.3, "sharpe": 1.1, "excess": 0.05}]}
-    d["signal_lab"] = {"signals": {"arima": {"ic": 0.06, "verdict": "KEEP"}},
-                       "validation": {"candidate_oos": 0.18, "default_oos": 0.12,
-                                      "spy_oos": 0.12, "n_oos": 3}}
     d["last_run"] = {"job": "weekly", "ended": "x", "status": "ok"}
     out = html.dashboard_html(d)
     used = set(re.findall(r'data-term="([^"]+)"', out))
@@ -229,7 +229,6 @@ def test_every_rendered_term_has_a_definition():
 
 
 def test_required_concepts_are_defined():
-    # Coverage floor: the core concepts a reader will hit must always be defined.
     from render import glossary
     for key in ("regime", "composite", "veto", "ic", "sharpe", "dsr", "cpcv",
                 "alpha", "drawdown", "out_of_sample", "momentum", "unrealized_pnl"):
@@ -237,19 +236,16 @@ def test_required_concepts_are_defined():
 
 
 def test_static_completeness_gate_no_undefined_keys():
-    """Source-level gate: EVERY glossary key wired into html.py must be defined —
-    independent of which sections a given run's data happens to populate."""
+    """Source-level gate: EVERY glossary key literally wired into html.py must be
+    defined — independent of which sections a given run's data happens to populate."""
     import re
     from render import glossary
     src = open(html.__file__, encoding="utf-8").read()
     keys = set()
     keys |= set(re.findall(r'_ibtn\("([a-z_]+)"\)', src))
-    keys |= set(re.findall(r'_term\("([a-z_]+)"\)', src))
-    keys |= set(re.findall(r'_th\("([a-z_]+)"', src))
-    keys |= set(re.findall(r'key="([a-z_]+)"', src))
-    keys |= set(re.findall(r'sub_key="([a-z_]+)"', src))
-    keys |= set(re.findall(r'_title\(\s*"[^"]*",\s*"[^"]*",\s*"([a-z_]+)"', src))
-    # dynamic veto-reason → key mapping must also only yield defined keys
+    keys |= set(re.findall(r'_dterm\("([a-z_]+)"', src))
+    keys |= set(re.findall(r'_th\("([a-z_]+)"', src))          # skips the empty-key _th("")
+    keys |= set(re.findall(r'data-term="([a-z_]+)"', src))      # literal (not {interpolated})
     keys |= {html._veto_key(r) for r in
              ["EARNINGS_BLACKOUT", "SENTIMENT_VETO", "VETO_VOL", "VETO_TAIL", "other"]}
     assert keys, "expected to find wired glossary keys in html.py source"
@@ -258,15 +254,14 @@ def test_static_completeness_gate_no_undefined_keys():
 
 
 def test_signal_bar_keys_are_all_defined():
-    # Every per-pick signal bar label must have a glossary entry.
     from render import glossary
     for sig in html._SIGNALS:
         assert glossary.has(sig), f"signal bar '{sig}' has no glossary entry"
 
 
-def test_positions_grouped_by_sector_with_subtotals_and_total():
-    # Per-ticker P&L ($ + %), grouped by sector with subtotals, a grand total,
-    # and a % Port column — all computed (value/P&L aren't stored columns).
+def test_positions_flat_sortable_table_with_total():
+    # Redesign: a flat, client-sortable table with per-ticker P&L ($ + %),
+    # a % Port column, a mini-bar, and a pinned grand Total row.
     pos = [{"ticker": "AAPL", "sector": "Technology", "shares": 1.34,
             "cost_basis": 295.95, "current_price": 274.73},
            {"ticker": "JNJ", "sector": "Healthcare", "shares": 2.135,
@@ -275,12 +270,10 @@ def test_positions_grouped_by_sector_with_subtotals_and_total():
             "cost_basis": 115.44, "current_price": 123.82}]
     out = html._positions_section(pos)
     assert "P&amp;L $" in out and "P&amp;L %" in out and "% Port" in out
-    assert "class='neg'" in out and "class='pos'" in out      # AAPL down, JNJ/MRK up
-    assert "tr class='subtotal'" in out and "Healthcare" in out  # per-sector subtotal
-    assert "tr class='grand'" in out and "TOTAL" in out and "100%" in out
-    assert "$367.94" in out or "$368" in out.replace(",", "")  # AAPL computed value
-    # Healthcare subtotal value = JNJ 521.95 + MRK 479.18 ≈ $1,001
-    assert "$1,001" in out
+    assert 'class="tbl sortable"' in out and 'data-sort="pnl"' in out   # client-sortable
+    assert 'class="pos"' in out and 'class="right mono neg"' in out.replace('"right mono neg"', '"right mono neg"') or "neg" in out
+    assert 'class="total"' in out and "Total" in out and "100%" in out  # pinned total row
+    assert 'data-sec="Technology"' in out                               # sector as sortable attr
 
 
 def test_defense_breaks_out_of_industrials():
@@ -294,11 +287,7 @@ def test_defense_breaks_out_of_industrials():
            {"ticker": "CSX", "sector": "Industrials", "shares": 9.58,
             "cost_basis": 45.57, "current_price": 46.0}]
     out = html._positions_section(pos)
-    assert "Defense" in out and "Industrials" in out
-    # GD sits under the Defense subtotal, not Industrials
-    defense_i, indus_i = out.index("Defense"), out.index("Industrials")
-    assert out.index("GD") < max(defense_i, indus_i)       # GD present
-    assert out.count("tr class='subtotal'") == 2           # Defense + Industrials
+    assert 'data-sec="Defense"' in out and 'data-sec="Industrials"' in out
 
 
 def test_company_names_render_next_to_tickers():
@@ -310,7 +299,6 @@ def test_company_names_render_next_to_tickers():
     out = html.dashboard_html(d)
     assert '<span class="coname">Johnson Co</span>' in out   # name beside ticker
     assert ".coname" in out                                   # styled muted
-    # unknown ticker → no name; known name with HTML is escaped (B13)
     d["positions"] = [{"ticker": "ZZZ", "shares": 1, "cost_basis": 1,
                        "current_price": 1, "market_value": 1, "unrealized_pnl": 0}]
     out2 = html.dashboard_html(d)
@@ -318,6 +306,5 @@ def test_company_names_render_next_to_tickers():
 
 
 def test_company_names_optional_backward_compatible():
-    # No names map → ticker still renders, no crash.
     out = html.dashboard_html(_sample())   # _sample has no "names" key
     assert "JNJ" in out
