@@ -223,6 +223,14 @@ class MockAlpacaClient:
             shares = 0.0
 
         if side == "buy":
+            # Reject an overdraft like a real broker would (paper cash must
+            # never go negative silently). $0.01 tolerance absorbs the
+            # notional=cash float round-trip (shares = cash/fill).
+            debit = shares * fill
+            if debit > self._cash + 0.01:
+                raise ValueError(
+                    f"insufficient cash: BUY {symbol} needs ${debit:,.2f}, "
+                    f"have ${self._cash:,.2f}")
             # C4: WACC accumulation
             if symbol in self._positions:
                 old = self._positions[symbol]
@@ -239,6 +247,12 @@ class MockAlpacaClient:
         elif side == "sell" and symbol in self._positions:
             existing = self._positions[symbol]["qty"]
             actual = min(shares, existing)
+            if shares > existing + _EPS_SHARES:
+                # A real broker rejects oversells; clamping keeps paper cycles
+                # alive but must be LOUD — a qty mismatch means ledger drift.
+                logger.warning(
+                    "oversell clamped: SELL %s %.6f sh but only %.6f held",
+                    symbol, shares, existing)
             remaining = existing - actual
             self._cash += actual * fill
             # epsilon: a full sell can leave float dust (e.g. 3e-07 sh) that

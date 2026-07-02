@@ -123,7 +123,7 @@ def position_note(pos: dict, trades: list[dict] | None = None) -> str:
     price = pos.get("current_price")
     market_value = shares * float(price) if price is not None else None
     unreal = (market_value - total_cost) if market_value is not None else None
-    unreal_pct = (unreal / total_cost) if (unreal is not None and total_cost) else None
+    unreal_frac = (unreal / total_cost) if (unreal is not None and total_cost) else None
 
     ticker = str(pos.get("ticker", "?"))
     fm = {
@@ -138,7 +138,7 @@ def position_note(pos: dict, trades: list[dict] | None = None) -> str:
         "current_price": None if price is None else round(float(price), 4),
         "market_value": None if market_value is None else round(market_value, 2),
         "unrealized_pnl": None if unreal is None else round(unreal, 2),
-        "unrealized_pct": None if unreal_pct is None else round(unreal_pct, 4),
+        "unrealized_pct": None if unreal_frac is None else round(unreal_frac, 4),
         "entry_date": pos.get("entry_date"),
         "entry_score": pos.get("entry_score"),
         "last_score": pos.get("last_score"),
@@ -151,7 +151,7 @@ def position_note(pos: dict, trades: list[dict] | None = None) -> str:
         f"- Shares: **{num(shares, 4)}** @ cost **{money(pos.get('cost_basis'))}** "
         f"(total {money(total_cost)})\n"
         f"- Current: **{money(price)}** · Market value: **{money(market_value)}**\n"
-        f"- Unrealized P&L: **{money(unreal)}** ({pct(unreal_pct)})\n"
+        f"- Unrealized P&L: **{money(unreal)}** ({pct(unreal_frac)})\n"
         f"- Entry: {pos.get('entry_date', '—')} @ score {num(pos.get('entry_score'), 3)} "
         f"(regime {pos.get('regime_at_entry', '—')}) · "
         f"last score {num(pos.get('last_score'), 3)}\n"

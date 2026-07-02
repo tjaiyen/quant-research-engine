@@ -327,16 +327,22 @@ def compute_realized_pnl_ytd() -> float:
     year_start = f"{datetime.now().year}-01-01"
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT shares, price, cost_basis FROM trade_history "
+            "SELECT ticker, shares, price, cost_basis FROM trade_history "
             "WHERE action = 'SELL' AND executed_at >= ?",
             (year_start,),
         ).fetchall()
-    return float(
-        sum(
-            (float(r["price"]) - float(r["cost_basis"] or r["price"])) * float(r["shares"])
-            for r in rows
-        )
-    )
+    total = 0.0
+    for r in rows:
+        if r["cost_basis"] is None:
+            # A NULL cost basis makes this sell contribute exactly $0 —
+            # keep that (never crash the monitor) but say so LOUDLY: it
+            # means the fill ledger is missing data and P&L is understated.
+            logger.warning(
+                "realized P&L: SELL %s %.6f sh has NULL cost_basis — "
+                "contributes $0 (ledger gap)", r["ticker"], float(r["shares"]))
+            continue
+        total += (float(r["price"]) - float(r["cost_basis"])) * float(r["shares"])
+    return float(total)
 
 
 # ── Signal History ─────────────────────────────────────────────────────────

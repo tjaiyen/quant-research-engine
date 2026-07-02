@@ -178,6 +178,26 @@ def cmd_score(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_audit(args: argparse.Namespace) -> int:
+    """Phase 29: on-demand accounting reconciliation. Exit 1 on drift."""
+    _preflight()
+    from auto_trader.monitor.reconciler import reconcile
+
+    r = reconcile()
+    print(f"Reconciliation: {r['n_checks']} checks · "
+          f"{len(r['discrepancies'])} discrepancies · as of {r['as_of']}")
+    for n in r["notes"]:
+        print(f"  note: {n}")
+    if r["ok"]:
+        print("  ✓ every P&L surface matches the trade-ledger replay")
+        return 0
+    print(f"  {'field':42} {'expected':>12} {'actual':>12} {'delta':>10}")
+    for d in r["discrepancies"]:
+        print(f"  {d['field']:42} {d['expected']!s:>12} "
+              f"{d['actual']!s:>12} {d['delta']!s:>10}")
+    return 1
+
+
 def cmd_clusters(args: argparse.Namespace) -> int:
     _preflight()
     from render import notes
@@ -748,6 +768,9 @@ def build_parser() -> argparse.ArgumentParser:
     bt.add_argument("--max-tickers", type=int, default=60, dest="max_tickers",
                     help="IC: universe sample size (default 60)")
     bt.set_defaults(func=cmd_backtest)
+
+    au = sub.add_parser("audit", help="reconcile every P&L surface vs the trade ledger (exit 1 on drift)")
+    au.set_defaults(func=cmd_audit)
 
     st = sub.add_parser("status", help="quick terminal summary")
     st.set_defaults(func=cmd_status)

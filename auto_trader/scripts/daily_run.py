@@ -155,6 +155,24 @@ def run_daily_monitor() -> dict:
     }
     log_portfolio_snapshot(snapshot)
 
+    # Phase 29: always-on accounting reconciliation — replay the trade ledger
+    # and flag any surface that drifted. Best-effort: a reconciler bug must
+    # never fail the monitor; drift is surfaced, never auto-repaired.
+    try:
+        from auto_trader.monitor.reconciler import reconcile
+
+        recon = reconcile()
+        log_system_event(
+            "RECON_OK" if recon["ok"] else "RECON_DRIFT",
+            f"{recon['n_checks']} checks, "
+            f"{len(recon['discrepancies'])} discrepancies",
+            {"discrepancies": recon["discrepancies"], "notes": recon["notes"]},
+        )
+        if not recon["ok"]:
+            logger.warning("RECONCILIATION DRIFT: %s", recon["discrepancies"])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("reconciler failed (%s) — monitor continues", exc)
+
     log_system_event(
         "DAILY_MONITOR",
         "Complete",

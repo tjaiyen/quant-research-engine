@@ -134,6 +134,25 @@ def _latest_run() -> dict:
         return {}
 
 
+def _latest_recon() -> dict:
+    """The most recent RECON_OK / RECON_DRIFT event (Phase 29), or {}.
+
+    The reconciler replays the trade ledger and compares every P&L surface;
+    the dashboard shows an amber banner when the latest run found drift.
+    """
+    try:
+        from auto_trader.state.portfolio_db import get_system_events
+        for ev in get_system_events(limit=200):
+            if ev.get("event_type") in ("RECON_OK", "RECON_DRIFT"):
+                return {"ok": ev["event_type"] == "RECON_OK",
+                        "at": str(ev.get("event_time", ""))[:16],
+                        "discrepancies": (ev.get("details") or {}).get(
+                            "discrepancies", [])}
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("recon status unreadable: %s", exc)
+    return {}
+
+
 def _decisions(trades: list[dict], max_entries: int = 40) -> list[dict]:
     """Merge screens + trades + daily-monitor events into a typed, sorted feed."""
     decisions: list[dict] = []
@@ -403,7 +422,7 @@ def build_all() -> dict:
             "decisions": [notes._decision_text(d) for d in decisions],
             "scorecard": scorecard, "copilot": _latest_copilot(),
             "last_run": _latest_run(), "tournament": _latest_tournament(),
-            "signal_lab": _latest_signal_lab(),
+            "signal_lab": _latest_signal_lab(), "recon": _latest_recon(),
         }))
         written.append("Dashboard.html")
     except Exception as exc:

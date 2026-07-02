@@ -28,6 +28,12 @@ from render.markdown import money, num, pct
 # lives in the Signal-Lab IC table, where it IS measured (see _signal_lab_section).
 _SIGNALS = ("arima", "kalman", "garch", "monte_carlo", "sharpe")
 
+# Return-% base = the $10k every book deposits (same constant as fleet_reads).
+# NOT (total − pnl): that is only coincidentally 10,000 while realized_pnl_ytd
+# covers the book's whole life — it drifts at the Jan-1 YTD reset and under any
+# snapshot-field inconsistency (the 7/1 stale-snapshot incident shape).
+_STARTING_CAPITAL = 10_000.0
+
 
 def _esc(s) -> str:
     return _html.escape(str(s if s is not None else ""))
@@ -292,7 +298,7 @@ def _verdict_section(data: dict) -> str:
     snap = data.get("latest_snapshot") or {}
     pnl = ((snap.get("unrealized_pnl") or 0) + (snap.get("realized_pnl_ytd") or 0)) if snap else None
     total = snap.get("total_value")
-    base = (total - pnl) if (total and pnl is not None) else 10000
+    base = _STARTING_CAPITAL
     pnl_pct = (pnl / base * 100.0) if (pnl is not None and base) else None
     sm = _equity_summary(data.get("snapshots") or [])
     sl = (data.get("signal_lab") or {}).get("signals") or {}
@@ -381,12 +387,29 @@ def _auto_banner(lr: dict) -> str:
             f'(<b>{job}</b>) completed {ended} UTC.</span></div>')
 
 
+def _recon_banner(recon: dict) -> str:
+    """Accounting-reconciliation beacon (Phase 29): amber on ledger drift."""
+    if not recon:
+        return ""
+    at = _esc(str(recon.get("at", "")).replace("T", " "))
+    if recon.get("ok"):
+        return (f'<div class="autobar pos"><b>✓ Books reconciled</b>'
+                f'<span>— every P&L surface matches the '
+                f'{_dterm("reconciliation", "trade-ledger replay")} ({at}).</span></div>')
+    fields = ", ".join(_esc(d.get("field", "?"))
+                       for d in (recon.get("discrepancies") or [])[:4]) or "unknown"
+    return (f'<div class="autobar warn"><b>⚠ Accounting drift</b>'
+            f'<span>— the {_dterm("reconciliation", "trade-ledger replay")} '
+            f'disagrees with: <b>{fields}</b> ({at}) — run '
+            f'<code>./track audit</code>.</span></div>')
+
+
 def _kpis(data: dict) -> str:
     snap = data.get("latest_snapshot") or {}
     picks = data.get("top_picks") or []
     total = snap.get("total_value")
     pnl = ((snap.get("unrealized_pnl") or 0) + (snap.get("realized_pnl_ytd") or 0)) if snap else None
-    base = (total - pnl) if (total and pnl is not None) else 10000
+    base = _STARTING_CAPITAL
     pnl_pct = (pnl / base * 100.0) if (pnl is not None and base) else 0.0
     dd = snap.get("drawdown_from_peak")
     n_pos = snap.get("n_positions", len(data.get("positions") or []))
@@ -814,7 +837,7 @@ def _company_health_section(rows: list[dict], names: dict | None = None) -> str:
             f'data-earn="{esort}">'
             f'<td>{_ticker(r.get("ticker"), names)}</td>'
             f'<td class="mono small {tone}"><b>{_esc(lbl)}{_esc(floors)}</b></td>'
-            f'<td class="right mono t2">{pct(roe / 100) if roe is not None else "—"}</td>'
+            f'<td class="right mono t2">{pct(roe) if roe is not None else "—"}</td>'
             f'<td class="right mono t2">{num(de, 2) if de is not None else "—"}</td>'
             f'<td class="right mono t2">{num(pe, 1) if pe is not None else "—"}</td>'
             f'<td class="right mono {etone}">{last}</td>'
@@ -1305,6 +1328,7 @@ def dashboard_html(data: dict) -> str:
 
         f'{_verdict_section(data)}'
         f'{_auto_banner(data.get("last_run") or {})}'
+        f'{_recon_banner(data.get("recon") or {})}'
 
         f'<section id="equity" class="card" style="scroll-margin-top:64px">'
         f'<div class="eq-hd"><div><h3>Strategy vs the market</h3>'

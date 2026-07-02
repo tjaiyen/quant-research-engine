@@ -470,6 +470,16 @@ GLOSSARY: dict[str, dict] = {
                 "(green), failed (red), or is overdue (amber — e.g. the Mac was asleep).",
         "example": "Amber 'no run in 40h' → the laptop was off when the job was due.",
     },
+    "reconciliation": {
+        "plain": "Do the books balance?", "term": "reconciliation",
+        "short": "An independent replay of every trade, checked against each P&L number shown.",
+        "long": "After each daily run the engine replays the whole trade ledger from scratch — "
+                "cash in/out, share counts, cost bases — and compares the result against the "
+                "broker book, the positions table, and today's snapshot. Any mismatch over one "
+                "cent is flagged here instead of silently propagating to the numbers you read.",
+        "example": "A stray test once wrote a fake $800 position into the live book; this check "
+                   "now catches that class of drift the same day.",
+    },
     "copilot": {
         "plain": "AI second opinion", "term": "co-pilot",
         "short": "A short plain-English read of the situation from Claude. Advisory only — it never trades.",
