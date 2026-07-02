@@ -658,7 +658,7 @@ def _signal_lab_section(sl: dict) -> str:
             f'right predict <b class="pos">forwards</b>.</p>{_diverging_bars(bar_rows)}</section>')
 
 
-def _fleet_holdings_table(holdings: list[dict]) -> str:
+def _fleet_holdings_table(holdings: list[dict], names: dict | None = None) -> str:
     """A member book's positions — the drill-down body of a fleet row."""
     if not holdings:
         return '<div class="empty">No holdings recorded yet.</div>'
@@ -667,7 +667,7 @@ def _fleet_holdings_table(holdings: list[dict]) -> str:
         pnl, ppct = h.get("pnl"), h.get("pnl_pct")
         tone = ("pos" if (pnl or 0) >= 0 else "neg") if pnl is not None else ""
         trs.append(
-            f'<tr><td><strong class="mono">{_esc(h.get("t"))}</strong></td>'
+            f'<tr><td>{_ticker(h.get("t"), names)}</td>'
             f'<td class="right mono t2">{num(h.get("shares"), 2)}</td>'
             f'<td class="right mono t2">{money(h.get("price")) if h.get("price") is not None else "—"}</td>'
             f'<td class="right mono">{money(h.get("value")) if h.get("value") is not None else "—"}</td>'
@@ -682,7 +682,7 @@ def _fleet_holdings_table(holdings: list[dict]) -> str:
             f'<tbody>{"".join(trs)}</tbody></table>')
 
 
-def _fleet_section(rows: list[dict]) -> str:
+def _fleet_section(rows: list[dict], names: dict | None = None) -> str:
     """Strategy-fleet leaderboard: one paper book per strategy, ranked live.
 
     Every row is a native <details> expandable — the leaderboard line is the
@@ -732,7 +732,7 @@ def _fleet_section(rows: list[dict]) -> str:
             frows.append(
                 f'<details class="frow"><summary>{line}'
                 f'<span class="fr-n muted2">{n} holdings ▾</span></summary>'
-                f'<div class="fr-body">{_fleet_holdings_table(r.get("holdings") or [])}'
+                f'<div class="fr-body">{_fleet_holdings_table(r.get("holdings") or [], names)}'
                 f'</div></details>')
     head = (f'<div class="frow frow-head">'
             f'<span class="fr-rank">#</span><span class="fr-name">Strategy</span>'
@@ -1302,7 +1302,7 @@ def dashboard_html(data: dict) -> str:
     screen_zone = (_zone_header("screen", "Today's screen")
                    + _screener_stats(summary) + today_grid)
     # zone: Is it working? — fleet leaderboard leads; drop the header if empty
-    fleet = _fleet_section(data.get("fleet") or [])
+    fleet = _fleet_section(data.get("fleet") or [], names)
     sc = _scorecard_section(data.get("scorecard"))
     sl = _signal_lab_section(data.get("signal_lab") or {})
     working_zone = ((_zone_header("working", "Is it working?") + fleet

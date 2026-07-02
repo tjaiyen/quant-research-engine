@@ -165,6 +165,10 @@ def test_fleet_note_and_section_render():
                                        "spy_pct": None, "excess_pct": None,
                                        "n_positions": 0, "holdings": []}])
     assert "No holdings recorded yet" in live_empty
+    # 29c: company names in the drill-down when a names map is supplied
+    named = html._fleet_section(rows, {"JNJ": "Johnson & Johnson"})
+    assert "Johnson &amp; Johnson" in named
+    assert "Johnson" not in out                # without names → bare ticker
 
 
 def test_fleet_glossary_term_defined():
