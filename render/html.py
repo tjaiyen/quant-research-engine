@@ -1072,6 +1072,22 @@ _PAGE_JS = r"""(function(){
   function closeGloss(){ if(glossEl){ glossEl.style.display='none'; var gb=document.getElementById('qt-gloss'); if(gb) gb.focus(); } }
   var glossBtn=document.getElementById('qt-gloss'); if(glossBtn) glossBtn.addEventListener('click',openGloss);
 
+  // ── quick filter: hide non-matching rows in every table whose rows carry
+  //    data-t (positions, company health). Matches ticker OR company name.
+  var filterEl=document.getElementById('qt-filter');
+  if(filterEl) filterEl.addEventListener('input',function(){
+    var q=filterEl.value.trim().toLowerCase();
+    document.querySelectorAll('tr[data-t]').forEach(function(tr){
+      var hit=!q || (tr.getAttribute('data-t')||'').toLowerCase().indexOf(q)>-1
+              || tr.textContent.toLowerCase().indexOf(q)>-1;
+      tr.style.display=hit?'':'none';
+    });
+    // totals/footers mislead while a filter is active — hide them
+    document.querySelectorAll('tfoot').forEach(function(tf){
+      tf.style.display=q?'none':'';
+    });
+  });
+
   // ── client-side table sort ──
   function cellVal(tr,key){ var v=tr.getAttribute('data-'+key);
     if(v===null){ var i={t:0,sec:1}[key]; var td=tr.children[i==null?0:i]; return (td?td.textContent:'').trim().toLowerCase(); }
@@ -1187,6 +1203,8 @@ header.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-bottom
 .btn .live{width:6px;height:6px;border-radius:50%;background:var(--pos);box-shadow:0 0 0 3px var(--pos-dim);}
 /* toolbar */
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:16px 0 20px;}
+.tb-filter{background:var(--inset);border:1px solid var(--border);border-radius:8px;color:var(--text);font:inherit;font-size:12.5px;padding:5px 10px;min-width:150px;}
+.tb-filter:focus{outline:2px solid var(--accent);outline-offset:1px;}
 .chipbtn{font:inherit;font-size:13px;cursor:pointer;border-radius:999px;padding:7px 15px;background:var(--surface);border:1px solid var(--border);color:var(--text2);}
 .chipbtn:hover{border-color:var(--accent);color:var(--text);}
 #qt-learn[aria-pressed=true]{background:var(--pos-dim);border-color:var(--pos-line);color:var(--pos);}
@@ -1301,6 +1319,14 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .fr-cell{text-align:right;} .fr-n{text-align:right;font-size:11px;white-space:nowrap;}
 .frow[open] .fr-n{color:var(--accent);}
 .fr-body{padding:4px 4px 12px 36px;}
+@media (max-width:640px){
+  /* phone: keep rank · strategy · P&L · return (+count); child order is
+     1 rank · 2 name · 3 value · 4 pnl · 5 return · 6 vs-SPY · 7 count */
+  .frow summary,.frow-flat,.frow-head{grid-template-columns:22px minmax(110px,1.6fr) repeat(2,minmax(62px,1fr)) 68px;gap:6px;font-size:12.5px;}
+  .frow summary>:nth-child(3),.frow-flat>:nth-child(3),.frow-head>:nth-child(3),
+  .frow summary>:nth-child(6),.frow-flat>:nth-child(6),.frow-head>:nth-child(6){display:none;}
+  .fr-body{padding-left:8px;overflow-x:auto;}
+}
 .tbl.small{font-size:12.5px;} .tbl.small td,.tbl.small th{padding:5px 8px;}
 /* sector picks */
 .sp-block{margin-top:14px;border-top:1px solid var(--border-soft);padding-top:12px;}
@@ -1381,6 +1407,9 @@ def dashboard_html(data: dict) -> str:
         f'<span id="qt-learn-state">off</span></button>'
         f'<button id="qt-gloss" type="button" class="chipbtn">Glossary</button>'
         f'<button id="qt-theme" type="button" class="chipbtn">Light mode</button>'
+        f'<input id="qt-filter" type="search" class="tb-filter" '
+        f'placeholder="Filter tickers…" aria-label="Filter positions and '
+        f'company tables by ticker or company name">'
         f'<span class="tb-hint">New here? Turn on <b class="muted">Learn mode</b>, or hover any '
         f'<span style="border-bottom:1px dotted var(--muted2)">underlined term</span>.</span></div>'
 

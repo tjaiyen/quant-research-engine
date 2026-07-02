@@ -75,6 +75,47 @@ def test_macos_alert_channel(monkeypatch):
     assert ae._try_macos("s", "b") is False          # non-macOS → other channels
 
 
+# ── ntfy phone-push channel (opt-in, OFF by default) ─────────────────────────
+
+def test_ntfy_disabled_by_default(monkeypatch):
+    from auto_trader.monitor import alert_engine as ae
+    monkeypatch.delenv("NTFY_TOPIC", raising=False)
+    called = []
+    monkeypatch.setattr("requests.post", lambda *a, **k: called.append(a))
+    assert ae._try_ntfy("s", "b") is False
+    assert not called                                # nothing leaves the machine
+
+
+def test_ntfy_posts_when_topic_set(monkeypatch):
+    from auto_trader.monitor import alert_engine as ae
+    monkeypatch.setenv("NTFY_TOPIC", "qt-test-topic-xyz")
+    calls = {}
+
+    class _Resp:
+        status_code = 200
+
+    def fake_post(url, data=None, headers=None, timeout=None):
+        calls.update(url=url, data=data, headers=headers)
+        return _Resp()
+
+    monkeypatch.setattr("requests.post", fake_post)
+    assert ae._try_ntfy("Drift", "field cash moved") is True
+    assert calls["url"] == "https://ntfy.sh/qt-test-topic-xyz"
+    assert b"field cash moved" == calls["data"]
+    assert calls["headers"]["Title"].startswith("Quant Tracker: Drift")
+
+
+# ── dashboard quick-filter + mobile fleet rows ───────────────────────────────
+
+def test_dashboard_has_quick_filter_and_mobile_fleet_css():
+    from render import html
+    out = html.dashboard_html({"as_of": "2026-07-02T00:00:00Z"})
+    assert 'id="qt-filter"' in out                   # toolbar input
+    assert "tr[data-t]" in out                       # the filter JS targets rows
+    assert "@media (max-width:640px)" in out         # fleet rows collapse on phone
+    # (the no-external-URL/offline invariant has its own dedicated test)
+
+
 # ── weekly digest note ───────────────────────────────────────────────────────
 
 def test_digest_note_renders_and_degrades():

@@ -63,6 +63,7 @@ def send_alert(
 
     sent_any = False
     sent_any |= _try_macos(subject, body)
+    sent_any |= _try_ntfy(subject, body)
     sent_any |= _try_smtp(subject, body)
     sent_any |= _try_slack(subject, body)
 
@@ -101,6 +102,35 @@ def _try_macos(subject: str, body: str) -> bool:
     except Exception as exc:  # noqa: BLE001 — alerting must never crash a run
         logger.debug("macOS notification failed: %s", exc)
         return False
+
+
+def _try_ntfy(subject: str, body: str) -> bool:
+    """Phone push via ntfy.sh — free, no account; OPT-IN and OFF by default.
+
+    Enable by setting NTFY_TOPIC in .env (pick a long random topic name — the
+    topic IS the credential; anyone who knows it can read the alerts) and
+    subscribing to it in the ntfy mobile app. No topic set → channel disabled,
+    nothing ever leaves the machine.
+    """
+    topic = os.getenv("NTFY_TOPIC", "").strip()
+    if not topic:
+        return False
+    try:
+        import requests
+
+        resp = requests.post(
+            f"https://ntfy.sh/{topic}",
+            data=body[:1000].encode("utf-8"),
+            headers={"Title": f"Quant Tracker: {subject[:120]}"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            logger.info("Alert pushed via ntfy")
+            return True
+        logger.warning("ntfy returned status %d", resp.status_code)
+    except Exception as exc:  # noqa: BLE001 — alerting must never crash a run
+        logger.warning("ntfy push failed: %s", exc)
+    return False
 
 
 def _try_smtp(subject: str, body: str) -> bool:
