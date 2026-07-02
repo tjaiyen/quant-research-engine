@@ -64,6 +64,16 @@ def test_dashboard_html_is_wellformed():
     assert 'data-sort=' in out                          # sortable tables
 
 
+def test_auto_refresh_preserves_scroll():
+    # The tab reloads itself (~15 min) to pick up new scheduled runs; scroll
+    # survives via sessionStorage and a pinned popover defers the reload.
+    out = html.dashboard_html(_sample())
+    assert "qt_scroll" in out and "sessionStorage" in out
+    assert "15*60*1000" in out                     # 15-minute cadence
+    assert "location.reload()" in out
+    assert "Auto-refreshes every 15 min" in out    # footer says so
+
+
 def test_dashboard_html_handles_empty():
     out = html.dashboard_html({"as_of": "x"})
     assert out.startswith("<!DOCTYPE html>")

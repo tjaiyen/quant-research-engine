@@ -165,3 +165,47 @@ def test_halt_flag_blocks_orders(tmp_path, monkeypatch):
             assert result is None
     finally:
         clear_halt()
+
+
+# ---------------------------------------------------------------------------
+# July-1 ledger bug — the ORDER must report the same real fill the position
+# book used (executor reads filled_qty/filled_avg_price into trade_history +
+# the positions DB; a divergent $100 placeholder corrupts the ledger).
+# ---------------------------------------------------------------------------
+def test_mtm_order_reports_real_fill_price():
+    import mock_broker
+    from mock_broker import MockAlpacaClient
+
+    client = MockAlpacaClient(cash=10_000, mark_to_market=True)
+    with patch.object(mock_broker, "_market_price", return_value=250.0):
+        # Notional buy: shares AND price on the order must use the real fill.
+        o = client.submit_order("XYZ", "buy", notional=1_000.0)
+        assert float(o.filled_avg_price) == 250.0
+        assert float(o.filled_qty) == pytest.approx(4.0)
+        assert client._positions["XYZ"]["qty"] == pytest.approx(4.0)
+        assert client._positions["XYZ"]["cost"] == 250.0
+        # Sell: order price matches the cash actually credited.
+        o2 = client.submit_order("XYZ", "sell", qty=4.0)
+        assert float(o2.filled_avg_price) == 250.0
+        assert client._cash == pytest.approx(10_000.0)
+
+
+def test_non_mtm_order_keeps_flat_mock_price():
+    # Unit-test path (no mark_to_market) stays at the flat $100 placeholder.
+    from mock_broker import MOCK_PRICE, MockAlpacaClient
+
+    client = MockAlpacaClient(cash=10_000)
+    o = client.submit_order("AAPL", "buy", notional=500.0)
+    assert float(o.filled_avg_price) == MOCK_PRICE
+    assert float(o.filled_qty) == pytest.approx(5.0)
+
+
+def test_full_sell_sweeps_float_dust_husk():
+    # A full sell computed at slightly different precision must not leave a
+    # 3e-07-share husk position behind (July-1 GD/KMI residue).
+    from mock_broker import MockAlpacaClient
+
+    client = MockAlpacaClient(cash=10_000)
+    client.submit_order("GD", "buy", qty=1.1721743398827156)
+    client.submit_order("GD", "sell", qty=1.1721743398827153)  # dust short
+    assert "GD" not in client._positions

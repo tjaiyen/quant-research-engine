@@ -41,6 +41,17 @@ fi
 trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
 
 run() { "$PY" -m cli.track "$@"; }
+
+# Retry once after a pause — a transient network blip (DNS, Wi-Fi wake) killed
+# the 6/28 weekly and left the screen a week stale. Delay is short enough that
+# the monthly screen (fires 06:00) still finishes before the 06:25 MOO window.
+RETRY_DELAY="${RETRY_DELAY:-300}"
+run_retry() {
+  run "$@" && return 0
+  echo "RETRY: '$*' failed — waiting ${RETRY_DELAY}s then retrying once…"
+  sleep "$RETRY_DELAY"
+  run "$@"
+}
 fail=0
 
 {
@@ -64,18 +75,18 @@ fail=0
   # Critical steps set fail=1 (surfaced in the exit code); `report` is best-effort.
   case "$JOB" in
     weekly)
-      echo "--- seed --refresh ---"; run seed --refresh || { echo "FAIL: seed"; fail=1; }
-      echo "--- screen ---";         run screen        || { echo "FAIL: screen"; fail=1; }
-      echo "--- health ---";         run health        || echo "WARN: health (best-effort)"
+      echo "--- seed --refresh ---"; run_retry seed --refresh || { echo "FAIL: seed"; fail=1; }
+      echo "--- screen ---";         run_retry screen        || { echo "FAIL: screen"; fail=1; }
+      echo "--- health ---";         run health              || echo "WARN: health (best-effort)"
       ;;
     daily)
-      echo "--- paper monitor ---";  run paper monitor || { echo "FAIL: monitor"; fail=1; }
+      echo "--- paper monitor ---";  run_retry paper monitor || { echo "FAIL: monitor"; fail=1; }
       ;;
     monthly)
       # Fresh screen first so the buy reads a <10h-old cache (else it aborts stale).
-      echo "--- screen ---";         run screen        || { echo "FAIL: screen"; fail=1; }
-      echo "--- paper cycle ---";    run paper cycle   || { echo "FAIL: cycle"; fail=1; }
-      echo "--- paper monitor ---";  run paper monitor || { echo "FAIL: monitor"; fail=1; }
+      echo "--- screen ---";         run_retry screen        || { echo "FAIL: screen"; fail=1; }
+      echo "--- paper cycle ---";    run paper cycle         || { echo "FAIL: cycle"; fail=1; }
+      echo "--- paper monitor ---";  run paper monitor       || { echo "FAIL: monitor"; fail=1; }
       ;;
     *)
       echo "ERROR: unknown job '$JOB' (expected weekly|daily|monthly)"; exit 3

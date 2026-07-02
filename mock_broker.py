@@ -58,13 +58,18 @@ class MockOrder:
         oid: str,
         qty: Optional[float] = None,
         notional: Optional[float] = None,
+        fill_price: float = MOCK_PRICE,
     ) -> None:
         self.id = oid
         self.symbol = symbol
         self.side = side
         self.status = "filled"
+        # The order must report the SAME fill the position book used — the
+        # executor reads filled_qty/filled_avg_price into trade_history and the
+        # positions DB, so a divergent price here corrupts the ledger (the
+        # July-1 cycle recorded every fill at the $100 placeholder).
         if notional is not None:
-            shares = float(notional) / MOCK_PRICE
+            shares = float(notional) / fill_price
         elif qty is not None:
             shares = float(qty)
         else:
@@ -72,7 +77,7 @@ class MockOrder:
         self.qty = str(shares)
         self.notional = str(notional) if notional is not None else None
         self.filled_qty = str(shares)
-        self.filled_avg_price = str(MOCK_PRICE)
+        self.filled_avg_price = str(fill_price)
         self.time_in_force = "day"
 
 
@@ -232,12 +237,15 @@ class MockAlpacaClient:
             actual = min(shares, existing)
             remaining = existing - actual
             self._cash += actual * fill
-            if remaining <= 0:
+            # epsilon: a full sell can leave float dust (e.g. 3e-07 sh) that
+            # would otherwise linger as a zero-value husk position forever.
+            if remaining <= 1e-9:
                 del self._positions[symbol]
             else:
                 self._positions[symbol]["qty"] = remaining
 
-        order = MockOrder(symbol, side, oid, qty=qty, notional=notional)
+        order = MockOrder(symbol, side, oid, qty=qty, notional=notional,
+                          fill_price=fill)
         order.time_in_force = time_in_force
         self._orders[oid] = order
         self._save()   # persist the new holdings/cash so the next process sees them
