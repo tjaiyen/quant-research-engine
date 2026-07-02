@@ -95,12 +95,15 @@ def test_min_composite_env_override():
     assert out.stdout.strip() == "0.47"
 
 
-def _mini_db(path, snaps):
+def _mini_db(path, snaps, trades=None):
     conn = sqlite3.connect(path)
     conn.execute("CREATE TABLE portfolio_snapshots (snapshot_date TEXT PRIMARY KEY,"
                  "total_value REAL, benchmark_value REAL, n_positions INTEGER)")
     for d, v, b, n in snaps:
         conn.execute("INSERT INTO portfolio_snapshots VALUES (?,?,?,?)", (d, v, b, n))
+    conn.execute("CREATE TABLE trade_history (action TEXT, executed_at TEXT)")
+    for action, ts in (trades or []):
+        conn.execute("INSERT INTO trade_history VALUES (?,?)", (action, ts))
     conn.commit()
     conn.close()
 
@@ -169,6 +172,40 @@ def test_fleet_note_and_section_render():
     named = html._fleet_section(rows, {"JNJ": "Johnson & Johnson"})
     assert "Johnson &amp; Johnson" in named
     assert "Johnson" not in out                # without names → bare ticker
+
+
+def test_fleet_decisions_aggregate_per_day(tmp_path, monkeypatch):
+    from render import build, html, notes
+    fake = [
+        {"id": "candidate", "label": "Flagship", "kind": "flagship"},
+        {"id": "sharpe", "label": "Pure Sharpe", "kind": "strategy"},
+        {"id": "rand", "label": "Random 20", "kind": "strategy"},
+        {"id": "pending", "label": "Pending", "kind": "strategy"},
+    ]
+    monkeypatch.setattr(fleet, "FLEET", fake)
+    monkeypatch.setattr(fleet, "FLEET_DIR", tmp_path)
+    for mid, trades in (("sharpe", [("BUY", "2026-07-01T13:20:01"),
+                                    ("BUY", "2026-07-01T13:20:02"),
+                                    ("SELL", "2026-08-03T13:20:00")]),
+                        ("rand", [("BUY", "2026-07-01T13:25:00")])):
+        (tmp_path / mid).mkdir()
+        _mini_db(tmp_path / mid / "portfolio.db",
+                 [("2026-07-01", 10000, 100, 1)], trades)
+    out = build._fleet_decisions()
+    assert len(out) == 2                                   # one entry PER DAY
+    d1 = next(x for x in out if x["when"].startswith("2026-07-01"))
+    assert d1["kind"] == "fleet"
+    got = {b["label"]: (b["n_buys"], b["n_sells"]) for b in d1["books"]}
+    assert got == {"Pure Sharpe": (2, 0), "Random 20": (1, 0)}
+    assert d1["when"] == "2026-07-01T13:25:00"             # latest ts that day
+    # narration: books + counts, tagged as Fleet on the dashboard
+    txt = notes._decision_text(d1)
+    assert "Fleet rebalance" in txt and "**2** strategy" in txt
+    assert "Pure Sharpe** (2 buys)" in txt
+    assert notes._decision_text({"when": "2026-07-01", "kind": "fleet",
+                                 "books": []}).endswith("No fills.")
+    items = html._decisions_section([txt])
+    assert ">Fleet</span>" in items
 
 
 def test_equity_chart_overlays_fleet_series():

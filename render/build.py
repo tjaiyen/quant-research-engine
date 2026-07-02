@@ -153,9 +153,56 @@ def _latest_recon() -> dict:
     return {}
 
 
+def _fleet_decisions() -> list[dict]:
+    """One feed entry per fleet trade-day, aggregated across member books.
+
+    9 books × ~20 fills on a cycle day must NOT become 9 entries (the feed
+    shows 10) — each date collapses to a single 'Fleet rebalance' line with
+    per-book buy/sell counts. Reads member DBs read-only, best-effort.
+    """
+    import sqlite3
+
+    try:
+        from auto_trader.fleet import FLEET, member_dir
+    except Exception as exc:                          # noqa: BLE001
+        logger.debug("fleet decisions skipped: %s", exc)
+        return []
+    # {date: {label: {"n_buys": x, "n_sells": y}}}, plus the latest ts per date
+    by_date: dict[str, dict[str, dict]] = {}
+    latest_ts: dict[str, str] = {}
+    for m in FLEET:
+        if m.get("kind") == "flagship":               # narrated by its own feed
+            continue
+        db = member_dir(m["id"]) / "portfolio.db"
+        if not db.exists():
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT action, executed_at FROM trade_history "
+                "ORDER BY executed_at DESC LIMIT 500").fetchall()
+            conn.close()
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("fleet decisions: %s unreadable (%s)", m["id"], exc)
+            continue
+        for r in rows:
+            ts = str(r["executed_at"])
+            day = ts[:10]
+            book = by_date.setdefault(day, {}).setdefault(
+                m["label"], {"n_buys": 0, "n_sells": 0})
+            book["n_buys" if r["action"] == "BUY" else "n_sells"] += 1
+            if ts > latest_ts.get(day, ""):
+                latest_ts[day] = ts
+    return [{"when": latest_ts[d], "kind": "fleet",
+             "books": [{"label": lbl, **c} for lbl, c in books.items()]}
+            for d, books in by_date.items()]
+
+
 def _decisions(trades: list[dict], max_entries: int = 40) -> list[dict]:
     """Merge screens + trades + daily-monitor events into a typed, sorted feed."""
     decisions: list[dict] = []
+    decisions.extend(_fleet_decisions())
 
     # Weekly screens — populated immediately (the autonomous screen already runs).
     try:

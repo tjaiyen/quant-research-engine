@@ -461,6 +461,20 @@ def _decision_text(d: dict) -> str:
                 f"{_TRADE_VERB.get(t.get('trigger_reason'), 'sold')} **{t.get('ticker')}**"
                 for t in closed[:8]))
         return f"💰 **{when}** — I traded. " + (" · ".join(parts) if parts else "No fills.")
+    if kind == "fleet":
+        books = d.get("books") or []
+        if not books:
+            return f"⚓ **{when}** — Fleet rebalance. No fills."
+        parts = []
+        for b in books:
+            counts = []
+            if b.get("n_buys"):
+                counts.append(f"{b['n_buys']} buys")
+            if b.get("n_sells"):
+                counts.append(f"{b['n_sells']} sells")
+            parts.append(f"**{b.get('label')}** ({', '.join(counts) or 'no fills'})")
+        return (f"⚓ **{when}** — Fleet rebalance: **{len(books)}** strategy "
+                f"books traded — " + ", ".join(parts) + ".")
     if kind == "daily":
         det = d.get("details", {}) or {}
         return (

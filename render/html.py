@@ -624,7 +624,8 @@ def _picks_section(picks: list[dict], sectors: dict, names: dict | None = None) 
             f'(0–1) blending all signals.</p>{"".join(rows)}</section>')
 
 
-_DEC_TAG = {"screen": ("Screen", "pos"), "trade": ("Trade", "warn"), "check": ("Check", "muted")}
+_DEC_TAG = {"screen": ("Screen", "pos"), "trade": ("Trade", "warn"),
+            "check": ("Check", "muted"), "fleet": ("Fleet", "warn")}
 
 
 def _decisions_section(decisions: list[str]) -> str:
@@ -634,8 +635,10 @@ def _decisions_section(decisions: list[str]) -> str:
     items = []
     for d in decisions[:10]:
         low = str(d).lower()
-        kind = ("screen" if "screen" in low else "trade" if "trade" in low
-                or "opened" in low or "bought" in low else "check")
+        kind = ("fleet" if "fleet rebalance" in low
+                else "screen" if "screen" in low
+                else "trade" if "trade" in low or "opened" in low or "bought" in low
+                else "check")
         tag, tone = _DEC_TAG[kind]
         items.append(f'<li><span class="tag {tone}">{tag}</span>'
                      f'<div class="dec-text">{_bold(d)}</div></li>')
