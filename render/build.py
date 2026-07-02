@@ -229,7 +229,7 @@ def fleet_reads() -> list[dict]:
         row = {"id": m["id"], "label": m["label"], "kind": m.get("kind", "strategy"),
                "group": m.get("group"), "value": None, "pnl": None, "ret_pct": None,
                "spy_pct": None, "excess_pct": None, "n_positions": None,
-               "since": None, "holdings": []}
+               "since": None, "holdings": [], "series": []}
         # exists() pre-check: a missing DB is a normal PENDING member (pre first
         # cycle) — don't rely on the ro-URI exception, which also masks a
         # genuinely corrupt DB behind the same silence.
@@ -265,6 +265,11 @@ def fleet_reads() -> list[dict]:
             conn.close()
             if snaps:
                 first, last = snaps[0], snaps[-1]
+                # Full equity series (already fetched) — the hero chart overlays
+                # every book as its own line.
+                row["series"] = [(str(s["snapshot_date"])[:10],
+                                  float(s["total_value"]))
+                                 for s in snaps if s["total_value"]]
                 # Baseline = the $10k STARTING CAPITAL every book deposits —
                 # NOT the first snapshot (the flagship's first snapshot was
                 # $10,121, which made its fleet row read −$82.82 while the P&L

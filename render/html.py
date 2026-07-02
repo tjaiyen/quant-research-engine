@@ -137,7 +137,13 @@ def _equity_summary(snaps: list[dict]) -> dict:
             "excess": (strat - spy) if spy is not None else None}
 
 
-def _svg_equity(snaps: list[dict]) -> str:
+# Distinct hues for the fleet overlay lines (flagship stays var(--accent),
+# SPY stays the dashed muted line). Order matches leaderboard iteration.
+_FLEET_HUES = ["#3fc17d", "#e2b23f", "#f0595c", "#a78bfa", "#38bdf8",
+               "#f472b6", "#facc15", "#34d399", "#fb923c", "#818cf8"]
+
+
+def _svg_equity(snaps: list[dict], fleet: list[dict] | None = None) -> str:
     pts = _equity_points(snaps)
     if len(pts) < 2:
         return ('<div class="empty">The equity curve builds after the first monthly '
@@ -146,7 +152,23 @@ def _svg_equity(snaps: list[dict]) -> str:
     b0 = pts[0][1]
     strat = [v / v0 * 100.0 for v, _ in pts]
     bench = ([b / b0 * 100.0 if b else None for _, b in pts] if b0 else [None] * len(pts))
-    allv = strat + [b for b in bench if b is not None]
+    # Fleet overlay: every member book is its own line, indexed to 100 at its
+    # own first snapshot (= the $10k deposit) and aligned onto the flagship's
+    # date axis. Books start on different dates; unmatched dates are skipped.
+    dates = [str(s.get("snapshot_date", ""))[:10]
+             for s in (snaps or []) if s.get("total_value")]
+    date_ix = {d: i for i, d in enumerate(dates)}
+    members = []
+    for k, r in enumerate(r for r in (fleet or []) if r.get("kind") != "flagship"):
+        mpts = [(date_ix[d], v) for d, v in (r.get("series") or []) if d in date_ix]
+        if not mpts:
+            continue
+        m0 = mpts[0][1] or 1.0
+        members.append({"label": r.get("label"),
+                        "hue": _FLEET_HUES[k % len(_FLEET_HUES)],
+                        "pts": [(i, v / m0 * 100.0) for i, v in mpts]})
+    allv = (strat + [b for b in bench if b is not None]
+            + [v for m in members for _, v in m["pts"]])
     lo, hi = min(allv), max(allv)
     pad = max((hi - lo) * 0.18, 0.3)
     lo, hi = lo - pad, hi + pad
@@ -202,14 +224,33 @@ def _svg_equity(snaps: list[dict]) -> str:
                    f'font-size="10">{spy_lbl}</text>')
     spy_line = (f'<polyline points="{spy_pts}" fill="none" stroke="var(--muted)" '
                 f'stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>' if spy_pts else "")
+    # Member lines draw UNDER the flagship (thin, translucent); a book with a
+    # single aligned snapshot shows as a start marker until history accrues.
+    fleet_svg = []
+    for m in members:
+        if len(m["pts"]) == 1:
+            i, v = m["pts"][0]
+            fleet_svg.append(f'<circle cx="{xf(i):.1f}" cy="{yf(v):.1f}" r="3" '
+                             f'fill="{m["hue"]}" opacity="0.85"/>')
+        else:
+            p = " ".join(f"{xf(i):.1f},{yf(v):.1f}" for i, v in m["pts"])
+            fleet_svg.append(f'<polyline points="{p}" fill="none" stroke="{m["hue"]}" '
+                             f'stroke-width="1.5" opacity="0.75"/>')
+    legend = ""
+    if members:
+        # Members only — the header's eq-legend already keys Strategy + SPY.
+        chips = [f'<span class="eleg"><i style="background:{m["hue"]}"></i>'
+                 f'{_esc(m["label"])}</span>' for m in members]
+        legend = f'<div class="elegend">{"".join(chips)}</div>'
     return (f'<svg viewBox="0 0 760 260" preserveAspectRatio="xMidYMid meet" class="chart" '
-            f'role="img" aria-label="Equity curve — strategy vs SPY, indexed to 100 at start.">'
-            f'{"".join(grid)}{band}{spy_line}'
+            f'role="img" aria-label="Equity curve — every fleet strategy vs SPY, '
+            f'each indexed to 100 at its own start.">'
+            f'{"".join(grid)}{band}{spy_line}{"".join(fleet_svg)}'
             f'<polyline points="{strat_pts}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>'
             f'<circle cx="660" cy="{ys:.1f}" r="4" fill="var(--accent)"/>'
             f'<text x="672" y="{ys - 3:.1f}" fill="var(--accent)" font-size="11" font-weight="600">Strategy</text>'
             f'<text x="672" y="{ys + 10:.1f}" fill="var(--muted)" font-size="10">{strat_lbl}</text>'
-            f'{spy_end}</svg>')
+            f'{spy_end}</svg>{legend}')
 
 
 # ── hand-rolled bars / donut (no libraries) ──────────────────────────────────
@@ -1190,6 +1231,9 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .eq-legend span{display:inline-flex;align-items:center;gap:6px;color:var(--text2);}
 .lg-strat{width:16px;height:3px;border-radius:2px;background:var(--accent);}
 .lg-spy{width:16px;height:0;border-top:2px dashed var(--muted);}
+.elegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:11.5px;}
+.eleg{display:inline-flex;align-items:center;gap:5px;color:var(--muted);}
+.eleg i{width:12px;height:3px;border-radius:2px;display:inline-block;}
 /* KPIs */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:13px;margin-bottom:14px;}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:15px 16px;box-shadow:var(--shadow);}
@@ -1353,10 +1397,11 @@ def dashboard_html(data: dict) -> str:
         f'<section id="equity" class="card" style="scroll-margin-top:64px">'
         f'<div class="eq-hd"><div><h3>Strategy vs the market</h3>'
         f'<p class="muted small">Paper account value over time vs. buying '
-        f'{_dterm("spy", "SPY")} — both {_dterm("equity_curve", "indexed to 100")} at start.</p></div>'
+        f'{_dterm("spy", "SPY")} — every book {_dterm("equity_curve", "indexed to 100")} '
+        f'at its own start. Fleet strategies join the race as their history accrues.</p></div>'
         f'<div class="eq-legend"><span><span class="lg-strat"></span>Strategy</span>'
         f'<span class="muted"><span class="lg-spy"></span>SPY</span></div></div>'
-        f'{_svg_equity(snaps)}</section>'
+        f'{_svg_equity(snaps, data.get("fleet"))}</section>'
 
         f'{_zone_header("money", "My money")}{_kpis(data)}'
         f'{_positions_section(data.get("positions") or [], names, data.get("latest_snapshot"))}'

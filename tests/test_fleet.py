@@ -171,6 +171,38 @@ def test_fleet_note_and_section_render():
     assert "Johnson" not in out                # without names → bare ticker
 
 
+def test_equity_chart_overlays_fleet_series():
+    from render import html
+    snaps = [{"snapshot_date": "2026-06-30", "total_value": 10000.0,
+              "benchmark_value": 700.0},
+             {"snapshot_date": "2026-07-01", "total_value": 10100.0,
+              "benchmark_value": 707.0},
+             {"snapshot_date": "2026-07-02", "total_value": 10050.0,
+              "benchmark_value": 710.0}]
+    fleet = [
+        {"id": "candidate", "label": "ARIMA+Sharpe (live)", "kind": "flagship",
+         "series": [("2026-06-30", 10000.0)]},          # skipped: flagship IS the line
+        {"id": "sharpe", "label": "Pure Sharpe", "kind": "strategy",
+         "series": [("2026-07-01", 10000.0), ("2026-07-02", 10200.0)]},
+        {"id": "spy", "label": "SPY buy-hold", "kind": "hold",
+         "series": [("2026-07-02", 10000.0)]},          # 1 aligned pt → marker
+        {"id": "pending", "label": "Pending", "kind": "strategy", "series": []},
+        {"id": "odd", "label": "Odd dates", "kind": "strategy",
+         "series": [("1999-01-01", 10000.0)]},          # unmatched → skipped
+    ]
+    out = html._svg_equity(snaps, fleet)
+    assert 'stroke-width="1.5"' in out                  # member polyline drawn
+    assert "Pure Sharpe" in out and "SPY buy-hold" in out   # legend chips
+    assert "Pending" not in out and "Odd dates" not in out  # nothing to draw
+    assert out.count('class="eleg"') == 2
+    # member excursion (10200/10000 → 102) must widen the y-range above 102
+    assert 'text-anchor="end"' in out and ">102<" in out
+    # flagship label not duplicated as a member chip
+    assert "ARIMA+Sharpe (live)" not in out
+    # without fleet: identical shape to the classic chart, no legend
+    assert 'class="elegend"' not in html._svg_equity(snaps)
+
+
 def test_fleet_glossary_term_defined():
     from render import glossary
     assert glossary.has("fleet")
