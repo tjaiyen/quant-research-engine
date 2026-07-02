@@ -16,9 +16,11 @@ configuration, one account, and one deliberate book decision.
 1. **Create a free Alpaca account** at alpaca.markets and open the
    **Paper Trading** dashboard. Generate an API key pair (paper keys work
    only against `paper-api.alpaca.markets` — they cannot trade real money).
-2. **Set the paper account's starting cash to $10,000** (Alpaca defaults to
-   $100k; the dashboard's "Reset/Configure" lets you pick the equity). This
-   keeps every surface's `$10,000` starting-capital baseline true.
+2. **Set the paper account's starting cash to $10,000.** Easiest path: the
+   account switcher (top-left) → **New Paper Account** → name it, Set Funds
+   `10000`, Save, then SELECT it — keys generate for whichever paper account
+   is selected. (Alpaca allows up to 3 paper accounts; the default $100k one
+   can sit unused.)
 3. **Put the keys in `.env`** (gitignored; never commit):
    ```
    ALPACA_USE_MOCK=false
@@ -26,6 +28,9 @@ configuration, one account, and one deliberate book decision.
    ALPACA_SECRET_KEY=<your paper secret>
    ALPACA_BASE_URL=https://paper-api.alpaca.markets
    ```
+   ⚠ **No trailing `/v2`** on the base URL — the dashboard displays the
+   endpoint as `…markets/v2`, but the SDK appends `/v2` itself; copying the
+   displayed value verbatim yields 404s on `/v2/v2/account`.
 4. **Verify** before any cycle:
    ```bash
    ./track doctor && ./track status

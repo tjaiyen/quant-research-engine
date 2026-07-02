@@ -91,6 +91,10 @@ def member_env(member: dict) -> dict:
     env["MOCK_BROKER_STATE"] = str(d / "mock_broker.json")
     env["SCREENER_CACHE_PATH"] = str(d / "screener_cache.json")
     env["FLEET_SKIP_REFRESH"] = "1"   # the flagship monitor already refreshed prices
+    # The fleet ALWAYS runs on the mock: the flagship may be cut over to the
+    # real Alpaca paper account (one per login), and 9 member books sharing it
+    # would trample each other's positions. Force mock regardless of .env.
+    env["ALPACA_USE_MOCK"] = "true"
     if member.get("min_composite") is not None:
         env["MIN_COMPOSITE_TO_BUY"] = str(member["min_composite"])
     for k, v in (member.get("env") or {}).items():   # per-member extras (e.g. TOP_N_PER_SECTOR)

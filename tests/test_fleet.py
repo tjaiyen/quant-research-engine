@@ -174,6 +174,14 @@ def test_fleet_note_and_section_render():
     assert "Johnson" not in out                # without names → bare ticker
 
 
+def test_member_env_always_forces_mock_broker(monkeypatch):
+    """Flagship on real Alpaca paper must NEVER leak to member subprocesses —
+    9 books sharing the single Alpaca account would trample each other."""
+    monkeypatch.setenv("ALPACA_USE_MOCK", "false")   # the cutover state
+    env = fleet.member_env(fleet.FLEET[1])           # any non-flagship member
+    assert env["ALPACA_USE_MOCK"] == "true"
+
+
 def test_fleet_decisions_aggregate_per_day(tmp_path, monkeypatch):
     from render import build, html, notes
     fake = [
