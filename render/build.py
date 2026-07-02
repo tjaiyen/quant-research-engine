@@ -209,27 +209,38 @@ def fleet_reads() -> list[dict]:
               else member_dir(m["id"]) / "portfolio.db")
         row = {"id": m["id"], "label": m["label"], "kind": m.get("kind", "strategy"),
                "group": m.get("group"), "value": None, "pnl": None, "ret_pct": None,
-               "spy_pct": None, "excess_pct": None, "n_positions": None}
+               "spy_pct": None, "excess_pct": None, "n_positions": None,
+               "since": None}
+        # exists() pre-check: a missing DB is a normal PENDING member (pre first
+        # cycle) — don't rely on the ro-URI exception, which also masks a
+        # genuinely corrupt DB behind the same silence.
+        if not db.exists():
+            rows.append(row)
+            continue
         try:
             conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
             conn.row_factory = sqlite3.Row
             snaps = conn.execute(
-                "SELECT total_value, benchmark_value, n_positions FROM "
-                "portfolio_snapshots ORDER BY snapshot_date").fetchall()
+                "SELECT snapshot_date, total_value, benchmark_value, n_positions "
+                "FROM portfolio_snapshots ORDER BY snapshot_date").fetchall()
             conn.close()
             if snaps:
                 first, last = snaps[0], snaps[-1]
                 base = float(first["total_value"]) or 10_000.0
                 val = float(last["total_value"])
+                # 'since' = inception label — books start on different dates
+                # (flagship 6/24, members 7/1); an unlabeled shared leaderboard
+                # would compare returns over different windows.
                 row.update(value=val, pnl=val - base,
                            ret_pct=(val / base - 1.0) * 100.0,
-                           n_positions=last["n_positions"])
+                           n_positions=last["n_positions"],
+                           since=str(first["snapshot_date"])[:10])
                 if first["benchmark_value"] and last["benchmark_value"]:
                     spy = (float(last["benchmark_value"])
                            / float(first["benchmark_value"]) - 1.0) * 100.0
                     row.update(spy_pct=spy, excess_pct=row["ret_pct"] - spy)
-        except Exception as exc:                      # noqa: BLE001 — pending member
-            logger.debug("fleet member %s unreadable (%s)", m["id"], exc)
+        except Exception as exc:                      # noqa: BLE001 — corrupt DB
+            logger.warning("fleet member %s DB unreadable (%s)", m["id"], exc)
         rows.append(row)
     rows.sort(key=lambda r: (r["ret_pct"] is None, -(r["ret_pct"] or 0.0)))
     return rows

@@ -318,3 +318,33 @@ def test_company_names_render_next_to_tickers():
 def test_company_names_optional_backward_compatible():
     out = html.dashboard_html(_sample())   # _sample has no "names" key
     assert "JNJ" in out
+
+
+# ── Phase 26: stress-test crash-path gates ────────────────────────────────────
+
+def test_positions_render_survives_priceless_position():
+    # F3: a position with no cached price (port/pnl None) must render '—',
+    # not TypeError-crash the whole dashboard (build_all would silently skip it).
+    pos = [{"ticker": "NEWCO", "sector": "Technology", "shares": 2.0,
+            "cost_basis": 50.0}]                      # no current_price/value
+    out = html._positions_section(pos)
+    assert "NEWCO" in out and "—" in out
+    # mixed with a healthy position still renders both
+    pos.append({"ticker": "JNJ", "sector": "Healthcare", "shares": 1.0,
+                "cost_basis": 100.0, "current_price": 110.0})
+    out2 = html._positions_section(pos)
+    assert "NEWCO" in out2 and "JNJ" in out2
+
+
+def test_equity_svg_survives_trailing_none_benchmark():
+    # F4: last snapshot missing benchmark_value (SPY fetch failed that day)
+    # while earlier snapshots have it — must render, not crash.
+    snaps = [{"total_value": 10000, "benchmark_value": 100},
+             {"total_value": 10100, "benchmark_value": 101},
+             {"total_value": 10200, "benchmark_value": None}]
+    out = html._svg_equity(snaps)
+    assert "<svg" in out and "Strategy" in out
+    # all-None benchmark also fine
+    snaps2 = [{"total_value": 10000, "benchmark_value": None},
+              {"total_value": 10100, "benchmark_value": None}]
+    assert "<svg" in html._svg_equity(snaps2)

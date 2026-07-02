@@ -236,3 +236,58 @@ def test_tourney_badge_renders():
              "spy_pct": 0.0, "excess_pct": 0.0, "n_positions": 20}]
     out = html._fleet_section(rows)
     assert "TOURNEY" in out and "CONTROL" in out
+
+
+# ── Phase 26: stress-test remediation gates ──────────────────────────────────
+
+def test_random20_static_across_months():
+    # F5: the basket must NOT re-roll when the screen month changes.
+    shared_jul = _fixture_cache()
+    shared_aug = _fixture_cache()
+    shared_aug["generated_at"] = "2026-08-03T06:00:00Z"
+    r20 = next(m for m in fleet.FLEET if m["id"] == "random20")
+    s_jul = {s["ticker"]: s["composite_score"]
+             for s in fleet.build_member_cache(shared_jul, r20)["sectors"]["Tech"]}
+    s_aug = {s["ticker"]: s["composite_score"]
+             for s in fleet.build_member_cache(shared_aug, r20)["sectors"]["Tech"]}
+    assert s_jul == s_aug                       # static seed → identical basket
+    # a name leaving the passer set is replaced; survivors keep their scores
+    shared_drop = _fixture_cache()
+    for s in shared_drop["sectors"]["Tech"]:
+        if s["ticker"] == "AAA":
+            s["passed_veto"] = False
+    s_drop = {s["ticker"]: s["composite_score"]
+              for s in fleet.build_member_cache(shared_drop, r20)["sectors"]["Tech"]}
+    assert s_drop["AAA"] == 0.0                  # dropped passer never selected
+    assert s_drop["BBB"] == s_jul["BBB"]         # survivor's priority unchanged
+
+
+def test_inverse_env_disables_decay_exit():
+    # F2: the inverse member ships SIGNAL_EXIT_THRESHOLD≈0 in its env.
+    inv = next(m for m in fleet.FLEET if m["id"] == "inverse")
+    env = fleet.member_env(inv)
+    assert env["SIGNAL_EXIT_THRESHOLD"] == "0.01"
+    out = subprocess.run(
+        [sys.executable, "-c",
+         "import os; os.environ['SIGNAL_EXIT_THRESHOLD']='0.01'; "
+         "import auto_trader.config as c; print(c.SIGNAL_EXIT_THRESHOLD)"],
+        capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "0.01"
+
+
+def test_fleet_reads_since_and_missing_db(tmp_path, monkeypatch):
+    # F6: pending member (no DB) short-circuits; live rows carry 'since'.
+    from render import build
+    fake = [{"id": "live", "label": "Live", "kind": "strategy"},
+            {"id": "pending", "label": "Pending", "kind": "strategy"}]
+    monkeypatch.setattr(fleet, "FLEET", fake)
+    monkeypatch.setattr(fleet, "FLEET_DIR", tmp_path)
+    (tmp_path / "live").mkdir()
+    _mini_db(tmp_path / "live" / "portfolio.db",
+             [("2026-07-01", 10000, 100, 20), ("2026-07-03", 10100, 101, 20)])
+    rows = build.fleet_reads()
+    live = next(r for r in rows if r["id"] == "live")
+    assert live["since"] == "2026-07-01"
+    pend = next(r for r in rows if r["id"] == "pending")
+    assert pend["value"] is None and pend["since"] is None

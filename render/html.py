@@ -179,12 +179,21 @@ def _svg_equity(snaps: list[dict]) -> str:
         return f"{'+' if v >= 0 else '−'}{abs(v):.1f}%"
 
     strat_lbl = f"{strat[-1]:.1f} · {fp(sm.get('strat', 0))}"
-    spy_end = (f'<circle cx="660" cy="{yp:.1f}" r="3.5" fill="var(--muted)"/>'
-               f'<text x="672" y="{yp - 3:.1f}" fill="var(--muted)" font-size="11" '
-               f'font-weight="600">SPY</text>'
-               f'<text x="672" y="{yp + 10:.1f}" fill="var(--muted)" font-size="10">'
-               f'{sm.get("spy") is not None and f"{bench[-1]:.1f} · {fp(sm["spy"])}" or ""}</text>'
-               if have_bench else "")
+    # F4 (stress-test fix): the endpoint label must tolerate a TRAILING None
+    # benchmark (last snapshot missing benchmark_value while earlier ones have
+    # it) — the old and/or nested f-string formatted bench[-1] unconditionally
+    # and crashed the render.
+    spy_end = ""
+    if have_bench:
+        if bench[-1] is not None and sm.get("spy") is not None:
+            spy_lbl = f"{bench[-1]:.1f} · {fp(sm['spy'])}"
+        else:
+            spy_lbl = ""
+        spy_end = (f'<circle cx="660" cy="{yp:.1f}" r="3.5" fill="var(--muted)"/>'
+                   f'<text x="672" y="{yp - 3:.1f}" fill="var(--muted)" font-size="11" '
+                   f'font-weight="600">SPY</text>'
+                   f'<text x="672" y="{yp + 10:.1f}" fill="var(--muted)" '
+                   f'font-size="10">{spy_lbl}</text>')
     spy_line = (f'<polyline points="{spy_pts}" fill="none" stroke="var(--muted)" '
                 f'stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>' if spy_pts else "")
     return (f'<svg viewBox="0 0 760 260" preserveAspectRatio="xMidYMid meet" class="chart" '
@@ -443,6 +452,10 @@ def _positions_section(positions: list[dict], names: dict | None = None) -> str:
         bar_side = "left" if pos else "right"
         bar = (f'<span class="pbar"><i style="{bar_side}:50%;width:{barw:.1f}%;'
                f'background:var(--{tone})"></i><i class="pbar-mid"></i></span>')
+        # F3 (stress-test fix): port is None when a position lacks price/value
+        # (e.g. fresh book, uncached ticker) — formatting None crashed the
+        # whole dashboard render. Every cell now degrades to '—'.
+        port_s = f'{r["port"]:.1f}%' if r["port"] is not None else "—"
         trs.append(
             f'<tr data-t="{_esc(r["t"])}" data-sec="{_esc(r["sec"])}" '
             f'data-price="{r["price"] or 0}" data-val="{r["val"] or 0}" '
@@ -456,14 +469,14 @@ def _positions_section(positions: list[dict], names: dict | None = None) -> str:
             f'<td class="right"><div class="pnlpct">{bar}'
             f'<span class="mono {tone}">{_arrow(r["pnlpct"])} '
             f'{abs(r["pnlpct"]):.1f}%</span></div></td>'
-            f'<td class="right mono muted">{r["port"]:.1f}%</td></tr>' if r["pnlpct"] is not None else
+            f'<td class="right mono muted">{port_s}</td></tr>' if r["pnlpct"] is not None else
             f'<tr data-t="{_esc(r["t"])}" data-sec="{_esc(r["sec"])}" data-val="{r["val"] or 0}">'
             f'<td>{_ticker(r["t"], names)}</td>'
             f'<td class="muted">{_esc((r["sec"] or "").replace("_", " "))}</td>'
             f'<td class="right mono t2">{money(r["price"]) if r["price"] is not None else "—"}</td>'
             f'<td class="right mono">{money(r["val"]) if r["val"] is not None else "—"}</td>'
             f'<td class="right mono">—</td><td class="right mono">—</td>'
-            f'<td class="right mono muted">{r["port"]:.1f}%</td></tr>')
+            f'<td class="right mono muted">{port_s}</td></tr>')
     g_pnl = sum(r["pnl"] or 0 for r in rows_data)
     gt = "pos" if g_pnl >= 0 else "neg"
     g_basis = sum((r["val"] or 0) - (r["pnl"] or 0) for r in rows_data) or 1.0
@@ -626,9 +639,11 @@ def _fleet_section(rows: list[dict]) -> str:
         ret, exc = r.get("ret_pct"), r.get("excess_pct")
         tone = "pos" if (pnl or 0) >= 0 else "neg"
         etone = "pos" if (exc or 0) >= 0 else "neg"
+        since = (f' <span class="coname">since {_esc(r["since"])}</span>'
+                 if r.get("since") else "")
         trs.append(
             f'<tr><td class="mono muted">{i if val is not None else "—"}</td>'
-            f'<td><strong>{_esc(r.get("label"))}</strong> {badge}</td>'
+            f'<td><strong>{_esc(r.get("label"))}</strong> {badge}{since}</td>'
             f'<td class="right mono">{money(val) if val is not None else "—"}</td>'
             f'<td class="right mono {tone if pnl is not None else ""}">'
             f'{f"{_arrow(pnl)} {money(pnl)}" if pnl is not None else "—"}</td>'
@@ -982,6 +997,8 @@ _PAGE_JS = r"""(function(){
     if(sy!==null){ sessionStorage.removeItem('qt_scroll'); scrollTo(0, parseInt(sy,10)||0); } }catch(e){}
   setInterval(function(){
     if(pinned) return;
+    // NB: openGloss/closeGloss toggle display via inline style — keep this
+    // check in sync if the modal ever moves to class-based visibility.
     if(glossEl && glossEl.style.display==='flex') return;
     try{ sessionStorage.setItem('qt_scroll', String(scrollY)); }catch(e){}
     try{ location.reload(); }catch(e){}

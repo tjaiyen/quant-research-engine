@@ -38,7 +38,10 @@ MIN_POSITION_VALUE_USD: float = 10.00
 # fleet member sets its own calibrated floor. Default unchanged for the
 # flagship. Self-validation below still enforces > SIGNAL_EXIT_THRESHOLD.
 MIN_COMPOSITE_TO_BUY: float = float(os.getenv("MIN_COMPOSITE_TO_BUY", "0.60"))
-SIGNAL_EXIT_THRESHOLD: float = 0.45
+# Env-overridable for the fleet: the inverse member disables decay-exits
+# (≈0) because the refresher scores with the FLAGSHIP lens, which is
+# backwards for a worst-ranked strategy. Flagship default unchanged.
+SIGNAL_EXIT_THRESHOLD: float = float(os.getenv("SIGNAL_EXIT_THRESHOLD", "0.45"))
 SCORE_DECAY_WARN_DELTA: float = -0.20
 # Env-overridable for the fleet's concentration variants (top5, random20);
 # flagship default unchanged. Members read it at import in a fresh subprocess.

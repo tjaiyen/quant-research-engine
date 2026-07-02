@@ -30,6 +30,10 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 MOCK_PRICE: float = 100.0
+# Below this share count a position is float dust from a full sell computed at
+# slightly different precision (e.g. 3e-07 sh) — swept rather than kept as a
+# zero-value husk. Far below any real fractional-share size (~1e-4).
+_EPS_SHARES: float = 1e-9
 
 
 def _market_price(symbol: str) -> float | None:
@@ -239,7 +243,7 @@ class MockAlpacaClient:
             self._cash += actual * fill
             # epsilon: a full sell can leave float dust (e.g. 3e-07 sh) that
             # would otherwise linger as a zero-value husk position forever.
-            if remaining <= 1e-9:
+            if remaining <= _EPS_SHARES:
                 del self._positions[symbol]
             else:
                 self._positions[symbol]["qty"] = remaining

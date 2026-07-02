@@ -81,7 +81,10 @@ fail=0
       ;;
     daily)
       echo "--- paper monitor ---";  run_retry paper monitor || { echo "FAIL: monitor"; fail=1; }
-      echo "--- fleet monitor ---";  run fleet monitor       || { echo "FAIL: fleet monitor"; fail=1; }
+      # A single member's hiccup shouldn't paint the automation banner red —
+      # the flagship monitor above is the critical daily step. Fleet cycle
+      # failures on the MONTHLY job DO set fail=1 (missed trades are critical).
+      echo "--- fleet monitor ---";  run fleet monitor       || echo "WARN: fleet monitor had failures"
       ;;
     monthly)
       # Fresh screen first so the buy reads a <10h-old cache (else it aborts stale).

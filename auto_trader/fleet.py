@@ -11,6 +11,10 @@ env seams that already exist (``TRADER_DB_PATH``, ``MOCK_BROKER_STATE``,
 
 Members run as SUBPROCESSES (``python -m auto_trader.fleet --member X --mode
 cycle|monitor``) so each gets a fresh broker singleton and import-time config.
+ISOLATION INVARIANT: this relies on every member running in a FRESH process
+whose env (member_env) is set BEFORE auto_trader modules import — the broker
+client singleton and env-read config constants bind at first use. Never loop
+members in-process without reset_client() + re-import.
 The flagship (the original book) is never driven from here — its history and
 schedule are untouched; the fleet only ever READS its screener cache.
 
@@ -57,8 +61,13 @@ FLEET: list[dict] = [
     # ── tournament variants: the backtest's hypotheses, forward-tested live ──
     # The tournament flagged its in-sample winner as "likely curve-fit,
     # hypothesis only" — these books let real forward data adjudicate.
+    # inverse: decay-exits OFF (SIGNAL_EXIT≈0) — the daily refresher rescores
+    # with the FLAGSHIP lens, under which a stock getting MORE attractive to
+    # inverse (falling raw score) would be decay-SOLD. Stop-losses and every
+    # risk guard remain fully active (F2, stress-test fix).
     {"id": "inverse", "label": "Worst-ranked (inverse)", "kind": "strategy",
-     "weights": None, "invert": True, "group": "tournament"},
+     "weights": None, "invert": True, "group": "tournament",
+     "env": {"SIGNAL_EXIT_THRESHOLD": "0.01"}},
     {"id": "sharpe", "label": "Pure Sharpe", "kind": "strategy",
      "weights": {"sharpe": 1.0}, "group": "tournament"},
     {"id": "top5", "label": "Top-5 per sector", "kind": "strategy",
@@ -150,22 +159,28 @@ def rescore(row: dict, weights: dict[str, float],
 
 
 def _random_scores(shared: dict, n: int) -> dict[str, float]:
-    """Month-seeded random selection among VETO-PASSERS (the harshest control).
+    """STATIC-seeded random selection among VETO-PASSERS (the harshest control).
 
-    Deterministic within a month (like the tournament's fixed-seed control, and
-    so a same-day re-run is idempotent); re-rolls at the next monthly cycle.
-    Chosen names get a clearly-above-floor score; everything else scores 0.
+    Fixed seed (F5, stress-test fix): a month-keyed seed re-rolled the entire
+    basket every cycle (~100% monthly turnover) — the tournament's random
+    control was FIXED-seed. One basket, held; a name only leaves when it fails
+    the vetoes (drops out of the passer set). Chosen names get a clearly-
+    above-floor score; everything else scores 0.
     """
     import random
 
-    month = str(shared.get("generated_at") or shared.get("_cached_at") or "")[:7]
-    rng = random.Random(f"fleet-random20-{month}")
     passers = sorted({s["ticker"] for stocks in (shared.get("sectors") or {}).values()
                       for s in (stocks or [])
                       if s.get("passed_veto") and s.get("ticker")})
-    chosen = rng.sample(passers, min(n, len(passers)))
-    # tiny deterministic jitter so ranks are stable but not all identical
-    return {t: 0.65 + 0.05 * rng.random() for t in chosen}
+    # Per-ticker deterministic priority — NOT rng.sample over the passer list,
+    # which would reshuffle whenever the passer SET drifts between screens.
+    # With a stable priority, the basket only changes when a held name stops
+    # passing the vetoes (its replacement is the next-priority passer).
+    def prio(t: str) -> float:
+        return random.Random(f"fleet-random20-static-v1:{t}").random()
+
+    chosen = sorted(passers, key=prio)[:n]
+    return {t: 0.65 + 0.05 * prio(t) for t in chosen}
 
 
 def build_member_cache(shared: dict, member: dict) -> dict:
@@ -260,6 +275,14 @@ def _run_hold_cycle(member: dict) -> dict:
         })
     except Exception as exc:                          # noqa: BLE001
         logger.warning("hold trade log failed (%s) — broker book is authoritative", exc)
+    # Sync the positions DB NOW (F7): without this the broker holds SPY but the
+    # DB doesn't until the first daily monitor, and the first sync would flag
+    # the untracked position as an ANOMALY.
+    try:
+        from auto_trader.broker.portfolio_state import sync_portfolio_state
+        sync_portfolio_state()
+    except Exception as exc:                          # noqa: BLE001
+        logger.warning("hold post-buy sync failed (%s) — next monitor will sync", exc)
     return {"status": "bought"}
 
 
@@ -296,9 +319,16 @@ def _member_main(argv: list[str] | None = None) -> int:
         return 0 if res.get("status") in ("held", "bought") else 1
 
     from auto_trader.scripts import monthly_run
-    if args.force_window:
-        from auto_trader.execution import order_scheduler
-        order_scheduler.wait_for_moo_window = lambda **_: True   # paper-only bypass
+
+    # Member cycles ALWAYS bypass the MOO-window wait (F1, stress-test fix):
+    # on a scheduled monthly the flagship consumes the 06:25-06:28 PT window,
+    # so members running after it would each block 30 min then fail
+    # "moo_missed". The flagship anchors the real window semantics; members
+    # fill at the same cached closes regardless — waiting adds only risk.
+    # The date-window check (1st-5th cycle day) in monthly_run stays REAL.
+    # --force-window is now redundant (kept for compatibility).
+    from auto_trader.execution import order_scheduler
+    order_scheduler.wait_for_moo_window = lambda **_: True   # paper-only bypass
     res = monthly_run.run_monthly_cycle()
     # "skipped"/"no_eligible"/"all_blocked" are legitimate no-trade outcomes,
     # not failures — the member simply sits out this cycle.
