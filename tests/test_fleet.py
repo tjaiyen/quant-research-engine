@@ -155,3 +155,84 @@ def test_fleet_note_and_section_render():
 def test_fleet_glossary_term_defined():
     from render import glossary
     assert glossary.has("fleet")
+
+
+# ── Phase 25: tournament variants ────────────────────────────────────────────
+
+def test_registry_has_tournament_variants():
+    ids = {m["id"] for m in fleet.FLEET}
+    assert {"inverse", "sharpe", "top5", "random20"} <= ids
+    assert len(ids) == 10
+    inv = next(m for m in fleet.FLEET if m["id"] == "inverse")
+    assert inv.get("invert") is True and inv["group"] == "tournament"
+    r20 = next(m for m in fleet.FLEET if m["id"] == "random20")
+    assert r20.get("random_n") == 20 and r20["group"] == "control"
+
+
+def test_inverse_flips_ranking_but_respects_veto():
+    shared = _fixture_cache()
+    inv = next(m for m in fleet.FLEET if m["id"] == "inverse")
+    out = fleet.build_member_cache(shared, inv)
+    tech = out["sectors"]["Tech"]
+    # default blend ranks BBB above AAA (sideways blend favours sharpe);
+    # inverted, the LOWER-blend stock must rank first among all
+    scores = {s["ticker"]: s["composite_score"] for s in tech}
+    assert scores["AAA"] + scores["BBB"] != 0  # sanity
+    ranked = [s["ticker"] for s in tech]
+    # whoever ranks first must have the LOWEST un-inverted blend
+    blend = fleet._default_weights(shared)
+    raw = {s["ticker"]: fleet.rescore(s, blend)
+           for s in _fixture_cache()["sectors"]["Tech"]}
+    assert raw[ranked[0]] <= raw[ranked[-1]]
+    # synthetic band clears the buy floor (a naive 1−score choked the first
+    # seed to 2 buys — every score must be floor-compatible AND rank-inverted)
+    assert all(0.60 <= s["composite_score"] <= 0.75 for s in tech)
+    # vetoed stock still never in top_overall
+    assert all(p["ticker"] != "CCC" for p in out["summary"]["top_overall"])
+
+
+def test_random20_deterministic_and_veto_safe():
+    shared = _fixture_cache()
+    r20 = next(m for m in fleet.FLEET if m["id"] == "random20")
+    out1 = fleet.build_member_cache(shared, r20)
+    out2 = fleet.build_member_cache(shared, r20)
+    s1 = {s["ticker"]: s["composite_score"] for s in out1["sectors"]["Tech"]}
+    s2 = {s["ticker"]: s["composite_score"] for s in out2["sectors"]["Tech"]}
+    assert s1 == s2                                    # month-seeded, idempotent
+    assert s1["CCC"] == 0.0                            # vetoed → never selected
+    chosen = [t for t, v in s1.items() if v > 0]
+    assert set(chosen) <= {"AAA", "BBB"}               # only veto-passers
+    # a different month reshuffles (different generated_at → different seed OK)
+    shared2 = _fixture_cache()
+    shared2["generated_at"] = "2026-08-01T06:00:00Z"
+    out3 = fleet.build_member_cache(shared2, r20)      # must not raise
+    assert out3["_fleet_member"] == "random20"
+
+
+def test_member_env_merges_extras():
+    top5 = next(m for m in fleet.FLEET if m["id"] == "top5")
+    env = fleet.member_env(top5)
+    assert env["TOP_N_PER_SECTOR"] == "5"
+    assert "fleet/top5" in env["TRADER_DB_PATH"].replace("\\", "/")
+
+
+def test_top_n_env_override():
+    out = subprocess.run(
+        [sys.executable, "-c",
+         "import os; os.environ['TOP_N_PER_SECTOR']='5'; "
+         "import auto_trader.config as c; print(c.TOP_N_PER_SECTOR)"],
+        capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "5"
+
+
+def test_tourney_badge_renders():
+    from render import html
+    rows = [{"id": "inverse", "label": "Worst-ranked (inverse)", "kind": "strategy",
+             "group": "tournament", "value": 10000.0, "pnl": 0.0, "ret_pct": 0.0,
+             "spy_pct": 0.0, "excess_pct": 0.0, "n_positions": 20},
+            {"id": "random20", "label": "Random 20", "kind": "strategy",
+             "group": "control", "value": 10000.0, "pnl": 0.0, "ret_pct": 0.0,
+             "spy_pct": 0.0, "excess_pct": 0.0, "n_positions": 20}]
+    out = html._fleet_section(rows)
+    assert "TOURNEY" in out and "CONTROL" in out

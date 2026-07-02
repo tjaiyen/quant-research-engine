@@ -40,7 +40,9 @@ MIN_POSITION_VALUE_USD: float = 10.00
 MIN_COMPOSITE_TO_BUY: float = float(os.getenv("MIN_COMPOSITE_TO_BUY", "0.60"))
 SIGNAL_EXIT_THRESHOLD: float = 0.45
 SCORE_DECAY_WARN_DELTA: float = -0.20
-TOP_N_PER_SECTOR: int = 2
+# Env-overridable for the fleet's concentration variants (top5, random20);
+# flagship default unchanged. Members read it at import in a fresh subprocess.
+TOP_N_PER_SECTOR: int = int(os.getenv("TOP_N_PER_SECTOR", "2"))
 
 # ── Risk Controls ──────────────────────────────────────────────────────────
 STOP_LOSS_PCT: float = 0.12

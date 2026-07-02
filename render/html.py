@@ -618,8 +618,10 @@ def _fleet_section(rows: list[dict]) -> str:
     trs = []
     for i, r in enumerate(rows, start=1):
         badge = ('<span class="tag pos">LIVE</span>' if r.get("kind") == "flagship"
-                 else '<span class="tag muted">CONTROL</span>' if r.get("kind") == "hold"
-                 else "")
+                 else '<span class="tag muted">CONTROL</span>'
+                 if (r.get("kind") == "hold" or r.get("group") == "control")
+                 else '<span class="tag warn">TOURNEY</span>'
+                 if r.get("group") == "tournament" else "")
         val, pnl = r.get("value"), r.get("pnl")
         ret, exc = r.get("ret_pct"), r.get("excess_pct")
         tone = "pos" if (pnl or 0) >= 0 else "neg"

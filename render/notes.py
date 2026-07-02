@@ -947,7 +947,9 @@ def fleet_note(data: dict) -> str:
 
     def _row(r):
         badge = (" **LIVE**" if r.get("kind") == "flagship"
-                 else " *(control)*" if r.get("kind") == "hold" else "")
+                 else " *(control)*"
+                 if (r.get("kind") == "hold" or r.get("group") == "control")
+                 else " *(tourney)*" if r.get("group") == "tournament" else "")
         ret = r.get("ret_pct")
         exc = r.get("excess_pct")
         return [

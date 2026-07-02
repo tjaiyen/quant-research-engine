@@ -208,8 +208,8 @@ def fleet_reads() -> list[dict]:
         db = (root / "store" / "portfolio.db" if m.get("kind") == "flagship"
               else member_dir(m["id"]) / "portfolio.db")
         row = {"id": m["id"], "label": m["label"], "kind": m.get("kind", "strategy"),
-               "value": None, "pnl": None, "ret_pct": None, "spy_pct": None,
-               "excess_pct": None, "n_positions": None}
+               "group": m.get("group"), "value": None, "pnl": None, "ret_pct": None,
+               "spy_pct": None, "excess_pct": None, "n_positions": None}
         try:
             conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
             conn.row_factory = sqlite3.Row

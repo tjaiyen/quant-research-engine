@@ -29,3 +29,4 @@ auto_trader/output/
 auto_trader/.paper_start_date
 auto_trader/.halt
 pre_trader_snapshot.txt
+logs/*.log.*

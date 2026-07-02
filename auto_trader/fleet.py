@@ -53,7 +53,20 @@ FLEET: list[dict] = [
                  "monte_carlo": 0.2, "sharpe": 0.2},
      "min_composite": 0.55},
     {"id": "spy", "label": "SPY buy-hold (control)", "kind": "hold",
-     "symbol": "SPY"},
+     "symbol": "SPY", "group": "control"},
+    # ── tournament variants: the backtest's hypotheses, forward-tested live ──
+    # The tournament flagged its in-sample winner as "likely curve-fit,
+    # hypothesis only" — these books let real forward data adjudicate.
+    {"id": "inverse", "label": "Worst-ranked (inverse)", "kind": "strategy",
+     "weights": None, "invert": True, "group": "tournament"},
+    {"id": "sharpe", "label": "Pure Sharpe", "kind": "strategy",
+     "weights": {"sharpe": 1.0}, "group": "tournament"},
+    {"id": "top5", "label": "Top-5 per sector", "kind": "strategy",
+     "weights": None, "env": {"TOP_N_PER_SECTOR": "5"},
+     "group": "tournament"},
+    {"id": "random20", "label": "Random 20 (control)", "kind": "strategy",
+     "random_n": 20, "env": {"TOP_N_PER_SECTOR": "5"},
+     "group": "control"},
 ]
 
 
@@ -71,6 +84,8 @@ def member_env(member: dict) -> dict:
     env["FLEET_SKIP_REFRESH"] = "1"   # the flagship monitor already refreshed prices
     if member.get("min_composite") is not None:
         env["MIN_COMPOSITE_TO_BUY"] = str(member["min_composite"])
+    for k, v in (member.get("env") or {}).items():   # per-member extras (e.g. TOP_N_PER_SECTOR)
+        env[k] = str(v)
     return env
 
 
@@ -134,20 +149,60 @@ def rescore(row: dict, weights: dict[str, float],
     return sum(w * float(sig.get(k) or 0.0) for k, w in weights.items()) / den
 
 
+def _random_scores(shared: dict, n: int) -> dict[str, float]:
+    """Month-seeded random selection among VETO-PASSERS (the harshest control).
+
+    Deterministic within a month (like the tournament's fixed-seed control, and
+    so a same-day re-run is idempotent); re-rolls at the next monthly cycle.
+    Chosen names get a clearly-above-floor score; everything else scores 0.
+    """
+    import random
+
+    month = str(shared.get("generated_at") or shared.get("_cached_at") or "")[:7]
+    rng = random.Random(f"fleet-random20-{month}")
+    passers = sorted({s["ticker"] for stocks in (shared.get("sectors") or {}).values()
+                      for s in (stocks or [])
+                      if s.get("passed_veto") and s.get("ticker")})
+    chosen = rng.sample(passers, min(n, len(passers)))
+    # tiny deterministic jitter so ranks are stable but not all identical
+    return {t: 0.65 + 0.05 * rng.random() for t in chosen}
+
+
 def build_member_cache(shared: dict, member: dict) -> dict:
     """The member's view of the shared screen: same stocks, same vetoes, same
-    regime — composites re-scored with the member's weights and re-ranked."""
+    regime — composites re-scored with the member's weights and re-ranked.
+
+    Variant flags: ``invert`` flips the ranking (composite = 1 − score) so the
+    unchanged trader machinery buys the WORST-ranked veto-passers (the
+    tournament's in-sample winner, forward-tested); ``random_n`` replaces
+    scoring with a month-seeded random pick among veto-passers (control).
+    """
     cache = copy.deepcopy(shared)
+    randoms = _random_scores(shared, member["random_n"]) if member.get("random_n") else None
     weights = member.get("weights") or _default_weights(shared)
     momentum = None
-    if "momentum" in weights:
+    if randoms is None and "momentum" in weights:
         tickers = [s.get("ticker") for stocks in (shared.get("sectors") or {}).values()
                    for s in (stocks or []) if s.get("ticker")]
         momentum = _momentum_scores(tickers)
     top: list[dict] = []
     for sector, stocks in (cache.get("sectors") or {}).items():
         for s in (stocks or []):
-            s["composite_score"] = round(rescore(s, weights, momentum), 6)
+            if randoms is not None:
+                score = randoms.get(s.get("ticker"), 0.0)
+            else:
+                score = rescore(s, weights, momentum)
+            s["composite_score"] = round(score, 6)
+        if member.get("invert") and randoms is None:
+            # Invert by RANK with a synthetic band [0.61, 0.75] (worst raw score
+            # highest) — a naive 1−score puts most veto-passers under any legal
+            # buy floor (>0.45), which choked the first live seed to 2 buys.
+            # Order-faithful to the tournament's 'Worst-ranked' variant; veto
+            # flags untouched, so 'worst-ranked' still ≠ 'unsafe'.
+            asc = sorted(stocks, key=lambda s: (s.get("composite_score") or 0.0))
+            n = max(len(asc) - 1, 1)
+            for i, s in enumerate(asc):
+                s["composite_score"] = round(0.75 - 0.14 * (i / n), 6)
         stocks.sort(key=lambda s: -(s.get("composite_score") or 0.0))
         for i, s in enumerate(stocks, start=1):
             s["rank"] = i
