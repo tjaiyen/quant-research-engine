@@ -24,12 +24,19 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 MOCK_PRICE: float = 100.0
+# Tier-0 execution realism: live (mark-to-market) fills execute ADVERSE to the
+# order — buys pay close×(1+bps), sells receive close×(1−bps) — a parametric
+# spread/slippage haircut, not an order-book sim (that's the Alpaca-paper path).
+# Applies ONLY to the mark-to-market account; the flat-MOCK_PRICE test mode
+# stays exact. Env-overridable; 0 disables.
+SLIPPAGE_BPS: float = float(os.getenv("SLIPPAGE_BPS", "5"))
 # Below this share count a position is float dust from a full sell computed at
 # slightly different precision (e.g. 3e-07 sh) — swept rather than kept as a
 # zero-value husk. Far below any real fractional-share size (~1e-4).
@@ -215,6 +222,10 @@ class MockAlpacaClient:
         self._order_seq += 1
         oid = f"mock-{self._order_seq}"
         fill = self._mark(symbol, MOCK_PRICE)   # real fill price for the live account
+        if self._mtm and SLIPPAGE_BPS:
+            # Adverse slippage on the live account only (see SLIPPAGE_BPS note).
+            fill *= 1.0 + (SLIPPAGE_BPS / 1e4 if side == "buy"
+                           else -SLIPPAGE_BPS / 1e4)
         if notional is not None:
             shares = float(notional) / fill
         elif qty is not None:

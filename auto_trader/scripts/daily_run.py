@@ -170,6 +170,11 @@ def run_daily_monitor() -> dict:
         )
         if not recon["ok"]:
             logger.warning("RECONCILIATION DRIFT: %s", recon["discrepancies"])
+            fields = ", ".join(d.get("field", "?")
+                               for d in recon["discrepancies"][:4])
+            send_alert("Accounting drift detected",
+                       f"Ledger replay disagrees with: {fields}. "
+                       f"Run ./track audit.", "RECON_DRIFT", force=True)
     except Exception as exc:  # noqa: BLE001
         logger.warning("reconciler failed (%s) — monitor continues", exc)
 

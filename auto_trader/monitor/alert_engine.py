@@ -62,6 +62,7 @@ def send_alert(
         return True
 
     sent_any = False
+    sent_any |= _try_macos(subject, body)
     sent_any |= _try_smtp(subject, body)
     sent_any |= _try_slack(subject, body)
 
@@ -71,6 +72,35 @@ def send_alert(
         logger.info("[ALERT/%s] %s | %s", alert_type, subject, body[:300])
         sent_any = True
     return sent_any
+
+
+def _try_macos(subject: str, body: str) -> bool:
+    """Local macOS notification via osascript — no creds, no network (Tier 0).
+
+    On by default on darwin; disable with ALERT_MACOS=false. Returns False on
+    non-macOS / disabled / error so the other channels + log fallback proceed.
+    """
+    import platform
+    import subprocess
+
+    if platform.system() != "Darwin":
+        return False
+    if os.getenv("ALERT_MACOS", "true").strip().lower() != "true":
+        return False
+    try:
+        # osascript string literals: escape backslashes + double quotes.
+        def q(s: str) -> str:
+            return s.replace("\\", "\\\\").replace('"', '\\"')
+
+        script = (f'display notification "{q(body[:180])}" '
+                  f'with title "Quant Tracker" subtitle "{q(subject[:120])}"')
+        subprocess.run(["osascript", "-e", script], check=True,
+                       capture_output=True, timeout=10)
+        logger.info("Alert shown as macOS notification")
+        return True
+    except Exception as exc:  # noqa: BLE001 — alerting must never crash a run
+        logger.debug("macOS notification failed: %s", exc)
+        return False
 
 
 def _try_smtp(subject: str, body: str) -> bool:

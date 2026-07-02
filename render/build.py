@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from render import notes
@@ -487,6 +487,19 @@ def build_all() -> dict:
         written.append("Fleet.md")
     except Exception as exc:
         logger.debug("fleet note skipped: %s", exc)
+
+    # 10) Weekly digest — the one-note weekly summary (Tier 0). Best-effort.
+    try:
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat()
+        atomic_write(root / "Digest.md", notes.digest_note({
+            "as_of": now_iso, "snapshot": latest_snapshot, "regime": regime,
+            "fleet": fleet_reads(), "recon": _latest_recon(),
+            "trades_7d": [t for t in paper["trades"]
+                          if str(t.get("executed_at", ""))[:10] >= week_ago],
+        }))
+        written.append("Digest.md")
+    except Exception as exc:
+        logger.debug("digest note skipped: %s", exc)
 
     return {
         "vault": str(root),

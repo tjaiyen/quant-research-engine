@@ -19,6 +19,9 @@ def test_in_memory_account_stays_flat_mock_price():
 
 def test_live_account_marks_to_market(tmp_path, monkeypatch):
     monkeypatch.setattr(mock_broker, "_market_price", lambda s: 150.0)
+    # Exact-fill mechanics under test here; slippage has its own coverage
+    # in tests/test_tier0.py.
+    monkeypatch.setattr(mock_broker, "SLIPPAGE_BPS", 0.0)
     c = MockAlpacaClient(cash=10_000.0, state_path=str(tmp_path / "mb.json"),
                          mark_to_market=True)
     c.submit_order("AAPL", "buy", notional=1500.0)        # fills at 150 → 10 shares

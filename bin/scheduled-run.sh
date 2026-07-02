@@ -113,4 +113,9 @@ printf '{"job":"%s","ended":"%s","status":"%s"}\n' \
 # Retain ~2 months of scheduled-run logs (runs even on early failure).
 /usr/bin/find "$LOG_DIR" -name 'sched-*.log' -mtime +60 -delete 2>/dev/null || true
 
+# Local notification on failure (Tier 0) — no creds, no network; best-effort.
+if [ "${fail:-0}" -ne 0 ]; then
+  /usr/bin/osascript -e "display notification \"Scheduled $JOB run FAILED — check logs/\" with title \"Quant Tracker\"" 2>/dev/null || true
+fi
+
 exit "$fail"

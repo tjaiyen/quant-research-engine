@@ -93,7 +93,10 @@ def test_wait_for_moo_window_times_out():
 # ---------------------------------------------------------------------------
 # order_sequencer end-to-end on the mock broker
 # ---------------------------------------------------------------------------
-def test_execute_sequence_sells_then_buys_persisted():
+def test_execute_sequence_sells_then_buys_persisted(monkeypatch):
+    import mock_broker
+    # Exact-fill accounting under test; slippage covered in tests/test_tier0.py.
+    monkeypatch.setattr(mock_broker, "SLIPPAGE_BPS", 0.0)
     from auto_trader.execution.order_sequencer import execute_sequence
     from auto_trader.state.portfolio_db import (
         get_position,
@@ -142,8 +145,11 @@ def test_execute_sequence_sells_then_buys_persisted():
     assert actions == ["BUY", "SELL"]
 
 
-def test_execute_sequence_logs_cost_basis_for_sells():
+def test_execute_sequence_logs_cost_basis_for_sells(monkeypatch):
     """SELL row in trade_history should carry cost_basis from positions table."""
+    import mock_broker
+    # Exact-fill accounting under test; slippage covered in tests/test_tier0.py.
+    monkeypatch.setattr(mock_broker, "SLIPPAGE_BPS", 0.0)
     from auto_trader.execution.order_sequencer import execute_sequence
     from auto_trader.state.portfolio_db import (
         compute_realized_pnl_ytd,

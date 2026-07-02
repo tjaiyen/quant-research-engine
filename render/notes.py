@@ -940,6 +940,60 @@ def strategy_backtest_note(data: dict) -> str:
     return document(fm, body)
 
 
+def digest_note(data: dict) -> str:
+    """Weekly digest — the one note that summarizes the week (Tier 0).
+
+    Data assembled by ``build_all``: latest snapshot, regime, fleet leaderboard
+    rows, reconciliation status, and the trailing-7-day trades.
+    """
+    snap = data.get("snapshot") or {}
+    regime = data.get("regime") or {}
+    fleet = data.get("fleet") or []
+    recon = data.get("recon") or {}
+    trades = data.get("trades_7d") or []
+    fm = {"title": "Digest", "type": "tracker-digest", "as_of": data.get("as_of"),
+          "n_trades_7d": len(trades)}
+
+    total = snap.get("total_value")
+    pnl = ((snap.get("unrealized_pnl") or 0) + (snap.get("realized_pnl_ytd") or 0)
+           if snap else None)
+    recon_line = ("—"
+                  if not recon else
+                  "✅ books reconciled (ledger replay matches every surface)"
+                  if recon.get("ok") else
+                  "⚠️ **accounting drift** — run `./track audit`")
+    head = (f"# 📬 Weekly digest\n\n"
+            f"- Portfolio: **{money(total)}** · total P&L "
+            f"**{'+' if (pnl or 0) >= 0 else ''}{money(pnl)}**\n"
+            f"- Regime: **{str(regime.get('label', 'unknown')).title()}**\n"
+            f"- Books: {recon_line}\n"
+            f"- Trades this week: **{len(trades)}** "
+            f"({sum(1 for t in trades if t.get('action') == 'BUY')} buys / "
+            f"{sum(1 for t in trades if t.get('action') == 'SELL')} sells)\n"
+            f"- Next buy window: the **1st–5th** of next month (monthly cycle).\n")
+
+    live = [r for r in fleet if r.get("ret_pct") is not None]
+    fleet_md = ""
+    if live:
+        rows = [[f"**{r.get('label')}**", f"{r['ret_pct']:+.1f}%",
+                 (f"{r['excess_pct']:+.1f}%" if r.get("excess_pct") is not None
+                  else "—")]
+                for r in live[:5]]
+        fleet_md = ("\n## Fleet leaders\n\n"
+                    + table(["Strategy", "Return", "vs SPY"], rows))
+
+    trades_md = ""
+    if trades:
+        by_day: dict[str, int] = {}
+        for t in trades:
+            by_day[str(t.get("executed_at", ""))[:10]] = \
+                by_day.get(str(t.get("executed_at", ""))[:10], 0) + 1
+        days = " · ".join(f"{d} ({n})" for d, n in sorted(by_day.items()))
+        trades_md = f"\n## Activity\n\nFills by day: {days}\n"
+
+    return document(fm, head + fleet_md + trades_md)
+
+
 def fleet_note(data: dict) -> str:
     """Strategy-fleet leaderboard: N parallel paper books, one per strategy.
 

@@ -1,0 +1,28 @@
+# CI (Tier 0): run both offline test suites on every push/PR.
+# The optional heavy extras (requirements-sentiment.txt: torch/FinBERT;
+# requirements-copilot.txt: anthropic) are NOT installed — their tests
+# degrade/skip gracefully by design. State is auto-isolated per test
+# (tests/conftest.py + auto_trader/tests/conftest.py), so no vault, no
+# network, and no credentials are needed.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Engine + render suite
+        run: pytest -q
+      - name: Paper-trader suite
+        run: pytest auto_trader/tests -q

@@ -1,5 +1,7 @@
 # Quant Tracker
 
+[![tests](https://github.com/tjaiyen/quant-research-engine/actions/workflows/tests.yml/badge.svg)](https://github.com/tjaiyen/quant-research-engine/actions/workflows/tests.yml)
+
 A local, paper-only **equity research engine**: a regime-aware screener (HMM +
 five quantitative signals + an 8-guard veto layer) feeding a paper auto-trader,
 with the results rendered as a self-contained HTML dashboard and Markdown notes

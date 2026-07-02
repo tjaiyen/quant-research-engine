@@ -177,7 +177,9 @@ def test_mtm_order_reports_real_fill_price():
     from mock_broker import MockAlpacaClient
 
     client = MockAlpacaClient(cash=10_000, mark_to_market=True)
-    with patch.object(mock_broker, "_market_price", return_value=250.0):
+    # Exact-fill mechanics under test; slippage covered in tests/test_tier0.py.
+    with patch.object(mock_broker, "SLIPPAGE_BPS", 0.0), \
+         patch.object(mock_broker, "_market_price", return_value=250.0):
         # Notional buy: shares AND price on the order must use the real fill.
         o = client.submit_order("XYZ", "buy", notional=1_000.0)
         assert float(o.filled_avg_price) == 250.0
