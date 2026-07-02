@@ -209,3 +209,16 @@ def test_full_sell_sweeps_float_dust_husk():
     client.submit_order("GD", "buy", qty=1.1721743398827156)
     client.submit_order("GD", "sell", qty=1.1721743398827153)  # dust short
     assert "GD" not in client._positions
+
+
+def test_paper_state_is_isolated_from_live(tmp_path):
+    # July-1 'BBB' pollution regression: conftest must point BOTH state env
+    # vars at throwaway paths so no test order can ever reach the LIVE book.
+    import os
+    assert "test_broker.json" in os.environ.get("MOCK_BROKER_STATE", "")
+    assert "test_portfolio.db" in os.environ.get("TRADER_DB_PATH", "")
+    from auto_trader.broker import alpaca_client
+    alpaca_client.reset_client()
+    client = alpaca_client.get_client()
+    client.submit_order("ZZZ", "buy", qty=1)     # lands in tmp, not store/
+    alpaca_client.reset_client()

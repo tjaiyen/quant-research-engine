@@ -91,7 +91,7 @@ Anthropic SDK). The core screener + validation + dashboard need neither.
 
 ```bash
 ./.venv/bin/python -m pytest -q                                  # engine + render (~180 tests)
-TRADER_DB_PATH=store/test.db ./.venv/bin/python -m pytest auto_trader/tests -q
+./.venv/bin/python -m pytest auto_trader/tests -q   # state auto-isolated (conftest)
 ```
 
 ## Safety

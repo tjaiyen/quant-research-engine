@@ -246,11 +246,15 @@ def fleet_reads() -> list[dict]:
             conn.close()
             if snaps:
                 first, last = snaps[0], snaps[-1]
-                base = float(first["total_value"]) or 10_000.0
+                # Baseline = the $10k STARTING CAPITAL every book deposits —
+                # NOT the first snapshot (the flagship's first snapshot was
+                # $10,121, which made its fleet row read −$82.82 while the P&L
+                # KPI correctly said +$38.41 — one book, two answers). All
+                # surfaces now measure from the same 10,000.
+                base = 10_000.0
                 val = float(last["total_value"])
-                # 'since' = inception label — books start on different dates
-                # (flagship 6/24, members 7/1); an unlabeled shared leaderboard
-                # would compare returns over different windows.
+                # 'since' = inception label — books still start on different
+                # dates (flagship 6/24, members 7/1).
                 row.update(value=val, pnl=val - base,
                            ret_pct=(val / base - 1.0) * 100.0,
                            n_positions=last["n_positions"],
