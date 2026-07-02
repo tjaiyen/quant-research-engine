@@ -133,23 +133,38 @@ def test_fleet_note_and_section_render():
     from render import html, notes
     rows = [{"id": "candidate", "label": "ARIMA+Sharpe (live)", "kind": "flagship",
              "value": 10121.23, "pnl": 121.23, "ret_pct": 1.2, "spy_pct": 1.6,
-             "excess_pct": -0.4, "n_positions": 16},
+             "excess_pct": -0.4, "n_positions": 16,
+             "holdings": [{"t": "JNJ", "shares": 2.13, "price": 254.66,
+                           "value": 542.4, "pnl": 42.4, "pnl_pct": 8.5},
+                          {"t": "NEWCO", "shares": 1.0, "price": None,
+                           "value": None, "pnl": None, "pnl_pct": None}]},
             {"id": "spy", "label": "SPY buy-hold (control)", "kind": "hold",
              "value": None, "pnl": None, "ret_pct": None, "spy_pct": None,
-             "excess_pct": None, "n_positions": None}]
+             "excess_pct": None, "n_positions": None, "holdings": []}]
     md = notes.fleet_note({"as_of": "x", "rows": rows})
     assert "Strategy fleet" in md and "LIVE" in md and "control" in md
     assert "type: tracker-fleet" in md
+    assert "## ARIMA+Sharpe (live)" in md and "**JNJ**" in md   # per-member holdings
     assert "seeds at the next monthly" in notes.fleet_note({"rows": []})
     out = html._fleet_section(rows)
     assert "Strategy fleet" in out and "LIVE" in out and "CONTROL" in out
-    assert "pending" in out                                # not-yet-seeded member
-    assert html._fleet_section([]) == ""                   # no fleet → no card
+    assert "<details" in out and "<summary" in out            # drill-down rows
+    assert "JNJ" in out and "2 holdings" in out               # holdings unfold
+    assert out.count("—") >= 3                                # price-less holding degrades
+    assert "pending" in out                                   # not-yet-seeded member
+    assert 'frow frow-flat' in out                            # pending row non-expandable
+    assert html._fleet_section([]) == ""                      # no fleet → no card
     empty = html._fleet_section([{"id": "x", "label": "X", "kind": "strategy",
                                   "value": None, "pnl": None, "ret_pct": None,
                                   "spy_pct": None, "excess_pct": None,
-                                  "n_positions": None}])
+                                  "n_positions": None, "holdings": []}])
     assert "No member books yet" in empty
+    # a live row with an empty book still expands, honestly labelled
+    live_empty = html._fleet_section([{"id": "y", "label": "Y", "kind": "strategy",
+                                       "value": 10000.0, "pnl": 0.0, "ret_pct": 0.0,
+                                       "spy_pct": None, "excess_pct": None,
+                                       "n_positions": 0, "holdings": []}])
+    assert "No holdings recorded yet" in live_empty
 
 
 def test_fleet_glossary_term_defined():
@@ -286,8 +301,19 @@ def test_fleet_reads_since_and_missing_db(tmp_path, monkeypatch):
     (tmp_path / "live").mkdir()
     _mini_db(tmp_path / "live" / "portfolio.db",
              [("2026-07-01", 10000, 100, 20), ("2026-07-03", 10100, 101, 20)])
+    # holdings drill-down: give the live member a positions table
+    conn = sqlite3.connect(tmp_path / "live" / "portfolio.db")
+    conn.execute("CREATE TABLE positions (ticker TEXT, shares REAL, "
+                 "cost_basis REAL, current_price REAL, status TEXT)")
+    conn.execute("INSERT INTO positions VALUES ('JNJ', 2.0, 100.0, 110.0, 'ACTIVE')")
+    conn.execute("INSERT INTO positions VALUES ('OLD', 1.0, 50.0, 60.0, 'CLOSED')")
+    conn.commit(); conn.close()
     rows = build.fleet_reads()
     live = next(r for r in rows if r["id"] == "live")
     assert live["since"] == "2026-07-01"
+    assert len(live["holdings"]) == 1                       # ACTIVE only
+    h = live["holdings"][0]
+    assert h["t"] == "JNJ" and abs(h["value"] - 220.0) < 1e-9
+    assert abs(h["pnl"] - 20.0) < 1e-9 and abs(h["pnl_pct"] - 10.0) < 1e-9
     pend = next(r for r in rows if r["id"] == "pending")
-    assert pend["value"] is None and pend["since"] is None
+    assert pend["value"] is None and pend["since"] is None and pend["holdings"] == []

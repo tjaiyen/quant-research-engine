@@ -210,7 +210,7 @@ def fleet_reads() -> list[dict]:
         row = {"id": m["id"], "label": m["label"], "kind": m.get("kind", "strategy"),
                "group": m.get("group"), "value": None, "pnl": None, "ret_pct": None,
                "spy_pct": None, "excess_pct": None, "n_positions": None,
-               "since": None}
+               "since": None, "holdings": []}
         # exists() pre-check: a missing DB is a normal PENDING member (pre first
         # cycle) — don't rely on the ro-URI exception, which also masks a
         # genuinely corrupt DB behind the same silence.
@@ -223,6 +223,26 @@ def fleet_reads() -> list[dict]:
             snaps = conn.execute(
                 "SELECT snapshot_date, total_value, benchmark_value, n_positions "
                 "FROM portfolio_snapshots ORDER BY snapshot_date").fetchall()
+            # Drill-down: every book's holdings (the fleet card expands each
+            # row to its positions). Own guard — fixtures/older DBs may lack
+            # the table; a live book without positions is simply [].
+            try:
+                for p in conn.execute(
+                        "SELECT ticker, shares, cost_basis, current_price "
+                        "FROM positions WHERE status='ACTIVE'").fetchall():
+                    sh = float(p["shares"] or 0.0)
+                    cost = float(p["cost_basis"] or 0.0)
+                    price = p["current_price"]
+                    val = sh * float(price) if price is not None else None
+                    pnl = (float(price) - cost) * sh if price is not None else None
+                    row["holdings"].append({
+                        "t": p["ticker"], "shares": sh, "price": price,
+                        "value": val, "pnl": pnl,
+                        "pnl_pct": (pnl / (cost * sh) * 100.0)
+                                   if (pnl is not None and cost and sh) else None})
+                row["holdings"].sort(key=lambda h: -(h["value"] or 0.0))
+            except Exception as exc:                  # noqa: BLE001
+                logger.debug("fleet member %s holdings unreadable (%s)", m["id"], exc)
             conn.close()
             if snaps:
                 first, last = snaps[0], snaps[-1]

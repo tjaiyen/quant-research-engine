@@ -964,8 +964,27 @@ def fleet_note(data: dict) -> str:
 
     tbl = table(["Strategy", "Value", "P&L", "Return", "Excess", "Holdings"],
                 [_row(r) for r in rows])
+
+    # Drill-down: every live book's positions, one section per member.
+    def _holdings_tbl(holdings):
+        return table(
+            ["Ticker", "Shares", "Price", "Value", "P&L $", "P&L %"],
+            [[f"**{h.get('t')}**", f"{h.get('shares', 0):.2f}",
+              money(h["price"]) if h.get("price") is not None else "—",
+              money(h["value"]) if h.get("value") is not None else "—",
+              money(h["pnl"]) if h.get("pnl") is not None else "—",
+              f"{h['pnl_pct']:+.1f}%" if h.get("pnl_pct") is not None else "—"]
+             for h in holdings])
+
+    sections = "".join(
+        f"\n## {r.get('label')}\n\n"
+        + (_holdings_tbl(r["holdings"]) if r.get("holdings")
+           else "_No holdings recorded yet._")
+        + "\n"
+        for r in rows if r.get("value") is not None)
     return document(fm, (
         f"# 🏁 Strategy fleet\n\n{intro}\n\n{tbl}\n\n"
         "_Every book is paper money on the same $10k start. Short histories are "
         "noise — let the race run before crowning anyone._\n"
+        f"{sections}"
     ))

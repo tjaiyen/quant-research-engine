@@ -615,20 +615,49 @@ def _signal_lab_section(sl: dict) -> str:
             f'right predict <b class="pos">forwards</b>.</p>{_diverging_bars(bar_rows)}</section>')
 
 
+def _fleet_holdings_table(holdings: list[dict]) -> str:
+    """A member book's positions — the drill-down body of a fleet row."""
+    if not holdings:
+        return '<div class="empty">No holdings recorded yet.</div>'
+    trs = []
+    for h in holdings:
+        pnl, ppct = h.get("pnl"), h.get("pnl_pct")
+        tone = ("pos" if (pnl or 0) >= 0 else "neg") if pnl is not None else ""
+        trs.append(
+            f'<tr><td><strong class="mono">{_esc(h.get("t"))}</strong></td>'
+            f'<td class="right mono t2">{num(h.get("shares"), 2)}</td>'
+            f'<td class="right mono t2">{money(h.get("price")) if h.get("price") is not None else "—"}</td>'
+            f'<td class="right mono">{money(h.get("value")) if h.get("value") is not None else "—"}</td>'
+            f'<td class="right mono {tone}">'
+            f'{f"{_arrow(pnl)} {money(pnl)}" if pnl is not None else "—"}</td>'
+            f'<td class="right mono {tone}">'
+            f'{f"{_arrow(ppct)} {abs(ppct):.1f}%" if ppct is not None else "—"}</td></tr>')
+    return (f'<table class="tbl small"><thead><tr><th>Ticker</th>'
+            f'<th class="right">Shares</th><th class="right">Price</th>'
+            f'<th class="right">Value</th><th class="right">P&amp;L $</th>'
+            f'<th class="right">P&amp;L %</th></tr></thead>'
+            f'<tbody>{"".join(trs)}</tbody></table>')
+
+
 def _fleet_section(rows: list[dict]) -> str:
-    """Strategy-fleet leaderboard: one paper book per strategy, ranked live."""
+    """Strategy-fleet leaderboard: one paper book per strategy, ranked live.
+
+    Every row is a native <details> expandable — the leaderboard line is the
+    <summary>; opening it unfolds that book's full holdings. Zero JS, offline.
+    """
     if not rows:
         return ""
     live = [r for r in rows if r.get("value") is not None]
     intro = (f'<p class="muted">Parallel paper books, one per strategy, on the '
              f'same weekly screen — the {_dterm("fleet", "live forward test")}. '
-             f'Same information, different weighting.</p>')
+             f'Same information, different weighting. '
+             f'<b class="muted">Click a strategy to see its holdings.</b></p>')
     if not live:
         return (f'<section class="card"><h3><span class="term" data-term="fleet">'
                 f'Strategy fleet</span></h3>{intro}'
                 f'<div class="empty">No member books yet — the fleet seeds at the '
                 f'next monthly buy window (1st–5th).</div></section>')
-    trs = []
+    frows = []
     for i, r in enumerate(rows, start=1):
         badge = ('<span class="tag pos">LIVE</span>' if r.get("kind") == "flagship"
                  else '<span class="tag muted">CONTROL</span>'
@@ -639,25 +668,37 @@ def _fleet_section(rows: list[dict]) -> str:
         ret, exc = r.get("ret_pct"), r.get("excess_pct")
         tone = "pos" if (pnl or 0) >= 0 else "neg"
         etone = "pos" if (exc or 0) >= 0 else "neg"
-        since = (f' <span class="coname">since {_esc(r["since"])}</span>'
+        since = (f'<span class="coname">since {_esc(r["since"])}</span>'
                  if r.get("since") else "")
-        trs.append(
-            f'<tr><td class="mono muted">{i if val is not None else "—"}</td>'
-            f'<td><strong>{_esc(r.get("label"))}</strong> {badge}{since}</td>'
-            f'<td class="right mono">{money(val) if val is not None else "—"}</td>'
-            f'<td class="right mono {tone if pnl is not None else ""}">'
-            f'{f"{_arrow(pnl)} {money(pnl)}" if pnl is not None else "—"}</td>'
-            f'<td class="right mono {tone if ret is not None else ""}">'
-            f'{f"{ret:+.1f}%" if ret is not None else "pending"}</td>'
-            f'<td class="right mono {etone if exc is not None else ""}">'
-            f'{f"{exc:+.1f}%" if exc is not None else "—"}</td></tr>')
-    tbl = (f'<table class="tbl"><thead><tr><th>#</th><th>Strategy</th>'
-           f'<th class="right">Value</th><th class="right">P&amp;L</th>'
-           f'<th class="right">Return</th><th class="right">vs SPY</th></tr>'
-           f'</thead><tbody>{"".join(trs)}</tbody></table>')
+        line = (
+            f'<span class="fr-rank mono muted">{i if val is not None else "—"}</span>'
+            f'<span class="fr-name"><strong>{_esc(r.get("label"))}</strong> '
+            f'{badge} {since}</span>'
+            f'<span class="fr-cell mono">{money(val) if val is not None else "—"}</span>'
+            f'<span class="fr-cell mono {tone if pnl is not None else ""}">'
+            f'{f"{_arrow(pnl)} {money(pnl)}" if pnl is not None else "—"}</span>'
+            f'<span class="fr-cell mono {tone if ret is not None else ""}">'
+            f'{f"{ret:+.1f}%" if ret is not None else "pending"}</span>'
+            f'<span class="fr-cell mono {etone if exc is not None else ""}">'
+            f'{f"{exc:+.1f}%" if exc is not None else "—"}</span>')
+        if val is None:
+            # Pending member — nothing to unfold yet.
+            frows.append(f'<div class="frow frow-flat">{line}</div>')
+        else:
+            n = len(r.get("holdings") or [])
+            frows.append(
+                f'<details class="frow"><summary>{line}'
+                f'<span class="fr-n muted2">{n} holdings ▾</span></summary>'
+                f'<div class="fr-body">{_fleet_holdings_table(r.get("holdings") or [])}'
+                f'</div></details>')
+    head = (f'<div class="frow frow-head">'
+            f'<span class="fr-rank">#</span><span class="fr-name">Strategy</span>'
+            f'<span class="fr-cell">Value</span><span class="fr-cell">P&amp;L</span>'
+            f'<span class="fr-cell">Return</span><span class="fr-cell">vs SPY</span>'
+            f'<span class="fr-n"></span></div>')
     return (f'<section class="card scroll-x"><h3><span class="term" data-term="fleet">'
             f'Strategy fleet</span> <span class="muted thin">· {len(live)} of '
-            f'{len(rows)} racing</span></h3>{intro}{tbl}'
+            f'{len(rows)} racing</span></h3>{intro}{head}{"".join(frows)}'
             f'<p class="callout">Every book starts at $10,000 paper. Short histories '
             f'are noise — let the race run before crowning anyone.</p></section>')
 
@@ -1160,6 +1201,17 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .donut-wrap{display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
 .donut-lg{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px;color:var(--muted);flex:1;min-width:200px;}
 .lg{display:flex;align-items:center;gap:7px;} .lg i{width:9px;height:9px;border-radius:2px;flex:0 0 auto;} .lg b{color:var(--text);margin-left:auto;}
+/* fleet drill-down rows */
+.frow{border-bottom:1px solid var(--border-soft);}
+.frow summary,.frow-flat,.frow-head{display:grid;grid-template-columns:28px minmax(180px,1.6fr) repeat(4,minmax(84px,1fr)) 90px;gap:8px;align-items:baseline;padding:9px 4px;font-size:13.5px;}
+.frow summary{cursor:pointer;list-style:none;}
+.frow summary::-webkit-details-marker{display:none;}
+.frow summary:hover{background:var(--raise);}
+.frow-head{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em;font-weight:600;}
+.fr-cell{text-align:right;} .fr-n{text-align:right;font-size:11px;white-space:nowrap;}
+.frow[open] .fr-n{color:var(--accent);}
+.fr-body{padding:4px 4px 12px 36px;}
+.tbl.small{font-size:12.5px;} .tbl.small td,.tbl.small th{padding:5px 8px;}
 /* sector picks */
 .sp-block{margin-top:14px;border-top:1px solid var(--border-soft);padding-top:12px;}
 .sp-hd{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted2);margin-bottom:8px;}
