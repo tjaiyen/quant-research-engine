@@ -442,7 +442,8 @@ def _kpis(data: dict) -> str:
     return f'<div class="kpis">{"".join(out)}</div>'
 
 
-def _positions_section(positions: list[dict], names: dict | None = None) -> str:
+def _positions_section(positions: list[dict], names: dict | None = None,
+                       snap: dict | None = None) -> str:
     if not positions:
         return ('<section id="positions" class="card"><h3>Positions</h3>'
                 '<div class="empty">No open positions yet — the first paper buys land '
@@ -503,8 +504,27 @@ def _positions_section(positions: list[dict], names: dict | None = None) -> str:
     g_pnl = sum(r["pnl"] or 0 for r in rows_data)
     gt = "pos" if g_pnl >= 0 else "neg"
     g_basis = sum((r["val"] or 0) - (r["pnl"] or 0) for r in rows_data) or 1.0
+    # The table can only total UNREALIZED P&L (open positions) — say so, and
+    # bridge to the KPI's total (unrealized + realized) so the two visible
+    # totals reconcile on the page instead of inviting a "$62.47 vs $38.41?"
+    # question (the +$299.21 incident's confusion class).
+    recon_line = ""
+    if snap:
+        unreal = snap.get("unrealized_pnl")
+        realized = snap.get("realized_pnl_ytd")
+        if unreal is not None and realized is not None:
+            tot = float(unreal) + float(realized)
+            tt = "pos" if tot >= 0 else "neg"
+            recon_line = (
+                f'<p class="hint" style="margin:8px 2px 0">'
+                f'Unrealized (open positions) <b class="mono '
+                f'{"pos" if unreal >= 0 else "neg"}">{_arrow(unreal)} {money(unreal)}</b>'
+                f' · Realized (closed this year) <b class="mono '
+                f'{"pos" if realized >= 0 else "neg"}">{_arrow(realized)} {money(realized)}</b>'
+                f' · = total P&amp;L <b class="mono {tt}">{_arrow(tot)} {money(tot)}</b></p>')
     total_row = (
-        f'<tr class="total"><td colspan="3">Total</td>'
+        f'<tr class="total"><td colspan="3">Total <span class="muted thin">'
+        f'(unrealized)</span></td>'
         f'<td class="right mono">{money(total_mv)}</td>'
         f'<td class="right mono {gt}">{_arrow(g_pnl)} {money(g_pnl)}</td>'
         f'<td class="right mono {gt}">{_arrow(g_pnl)} {abs(g_pnl / g_basis * 100.0):.1f}%</td>'
@@ -521,7 +541,7 @@ def _positions_section(positions: list[dict], names: dict | None = None) -> str:
             f'<span class="hint">Click a column to sort</span></div>'
             f'<table class="tbl sortable" data-sort-key="sec" data-sort-dir="1">'
             f'<thead>{head}</thead><tbody>{"".join(trs)}</tbody>'
-            f'<tfoot>{total_row}</tfoot></table></section>')
+            f'<tfoot>{total_row}</tfoot></table>{recon_line}</section>')
 
 
 def _screener_stats(summary: dict) -> str:
@@ -1339,7 +1359,7 @@ def dashboard_html(data: dict) -> str:
         f'{_svg_equity(snaps)}</section>'
 
         f'{_zone_header("money", "My money")}{_kpis(data)}'
-        f'{_positions_section(data.get("positions") or [], names)}'
+        f'{_positions_section(data.get("positions") or [], names, data.get("latest_snapshot"))}'
 
         f'{screen_zone}{working_zone}{hud_zone}'
 

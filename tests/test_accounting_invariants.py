@@ -209,6 +209,26 @@ def test_positions_port_pct_sums_to_100():
     assert sum(vals) == pytest.approx(10*110 + 5*90 + 2*140)
 
 
+# ── 29b: positions Total is labeled unrealized + bridges to the KPI total ───
+
+def test_positions_total_labeled_and_reconciled_to_kpi():
+    from render import html
+    positions = [
+        {"ticker": "AAA", "sector": "Tech", "shares": 10, "cost_basis": 100.0,
+         "current_price": 110.0, "status": "ACTIVE"},
+    ]
+    snap = {"unrealized_pnl": 100.0, "realized_pnl_ytd": -24.06}
+    out = html._positions_section(positions, snap=snap)
+    assert "(unrealized)" in out                 # the Total row says what it is
+    assert "Realized (closed this year)" in out  # the bridge line renders
+    # the three bridge numbers satisfy unrealized + realized == total
+    assert "$100.00" in out and "$-24.06" in out and "$75.94" in out
+    # without a snapshot: labeled Total, no bridge line
+    bare = html._positions_section(positions)
+    assert "(unrealized)" in bare
+    assert "Realized (closed this year)" not in bare
+
+
 # ── I7: bounds on rendered surfaces ─────────────────────────────────────────
 
 def test_snapshot_identity_total_equals_cash_plus_invested(temp_db, monkeypatch):
