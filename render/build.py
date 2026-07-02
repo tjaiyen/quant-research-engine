@@ -188,6 +188,53 @@ def _decisions(trades: list[dict], max_entries: int = 40) -> list[dict]:
     return decisions[:max_entries]
 
 
+def fleet_reads() -> list[dict]:
+    """Leaderboard rows for the strategy fleet — one per member, best-effort.
+
+    Reads each member's ``portfolio.db`` DIRECTLY (plain sqlite3, read-only) so
+    no env juggling touches the in-process flagship connection. A member with
+    no book yet (pre-first-cycle) appears as a pending row with value=None.
+    """
+    import sqlite3
+
+    try:
+        from auto_trader.fleet import FLEET, member_dir
+    except Exception as exc:                          # noqa: BLE001
+        logger.debug("fleet reads skipped: %s", exc)
+        return []
+    root = Path(__file__).resolve().parents[1]
+    rows: list[dict] = []
+    for m in FLEET:
+        db = (root / "store" / "portfolio.db" if m.get("kind") == "flagship"
+              else member_dir(m["id"]) / "portfolio.db")
+        row = {"id": m["id"], "label": m["label"], "kind": m.get("kind", "strategy"),
+               "value": None, "pnl": None, "ret_pct": None, "spy_pct": None,
+               "excess_pct": None, "n_positions": None}
+        try:
+            conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            snaps = conn.execute(
+                "SELECT total_value, benchmark_value, n_positions FROM "
+                "portfolio_snapshots ORDER BY snapshot_date").fetchall()
+            conn.close()
+            if snaps:
+                first, last = snaps[0], snaps[-1]
+                base = float(first["total_value"]) or 10_000.0
+                val = float(last["total_value"])
+                row.update(value=val, pnl=val - base,
+                           ret_pct=(val / base - 1.0) * 100.0,
+                           n_positions=last["n_positions"])
+                if first["benchmark_value"] and last["benchmark_value"]:
+                    spy = (float(last["benchmark_value"])
+                           / float(first["benchmark_value"]) - 1.0) * 100.0
+                    row.update(spy_pct=spy, excess_pct=row["ret_pct"] - spy)
+        except Exception as exc:                      # noqa: BLE001 — pending member
+            logger.debug("fleet member %s unreadable (%s)", m["id"], exc)
+        rows.append(row)
+    rows.sort(key=lambda r: (r["ret_pct"] is None, -(r["ret_pct"] or 0.0)))
+    return rows
+
+
 def build_all() -> dict:
     """Regenerate every tracker note. Returns a summary of what was written."""
     root = tracker_dir()
@@ -310,13 +357,14 @@ def build_all() -> dict:
                 })
         except Exception:
             health = []
+        fleet = fleet_reads()
         atomic_write(root / "Dashboard.html", _html.dashboard_html({
             "as_of": now_iso, "regime": regime, "top_picks": top_picks,
             "summary": (results or {}).get("summary"),
             "sectors": (results or {}).get("sectors"),
             "latest_snapshot": latest_snapshot, "snapshots": snapshots,
             "positions": paper["positions"], "sentiment": sentiment, "names": names,
-            "health": health,
+            "health": health, "fleet": fleet,
             "decisions": [notes._decision_text(d) for d in decisions],
             "scorecard": scorecard, "copilot": _latest_copilot(),
             "last_run": _latest_run(), "tournament": _latest_tournament(),
@@ -325,6 +373,14 @@ def build_all() -> dict:
         written.append("Dashboard.html")
     except Exception as exc:
         logger.debug("html dashboard skipped: %s", exc)
+
+    # 9) Fleet leaderboard note (best-effort; empty pre-first-cycle is fine).
+    try:
+        atomic_write(root / "Fleet.md",
+                     notes.fleet_note({"as_of": now_iso, "rows": fleet_reads()}))
+        written.append("Fleet.md")
+    except Exception as exc:
+        logger.debug("fleet note skipped: %s", exc)
 
     return {
         "vault": str(root),

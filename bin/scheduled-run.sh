@@ -81,12 +81,15 @@ fail=0
       ;;
     daily)
       echo "--- paper monitor ---";  run_retry paper monitor || { echo "FAIL: monitor"; fail=1; }
+      echo "--- fleet monitor ---";  run fleet monitor       || { echo "FAIL: fleet monitor"; fail=1; }
       ;;
     monthly)
       # Fresh screen first so the buy reads a <10h-old cache (else it aborts stale).
       echo "--- screen ---";         run_retry screen        || { echo "FAIL: screen"; fail=1; }
       echo "--- paper cycle ---";    run paper cycle         || { echo "FAIL: cycle"; fail=1; }
+      echo "--- fleet cycle ---";    run fleet cycle         || { echo "FAIL: fleet cycle"; fail=1; }
       echo "--- paper monitor ---";  run paper monitor       || { echo "FAIL: monitor"; fail=1; }
+      echo "--- fleet monitor ---";  run fleet monitor       || { echo "FAIL: fleet monitor"; fail=1; }
       ;;
     *)
       echo "ERROR: unknown job '$JOB' (expected weekly|daily|monthly)"; exit 3

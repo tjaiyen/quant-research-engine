@@ -602,6 +602,49 @@ def _signal_lab_section(sl: dict) -> str:
             f'right predict <b class="pos">forwards</b>.</p>{_diverging_bars(bar_rows)}</section>')
 
 
+def _fleet_section(rows: list[dict]) -> str:
+    """Strategy-fleet leaderboard: one paper book per strategy, ranked live."""
+    if not rows:
+        return ""
+    live = [r for r in rows if r.get("value") is not None]
+    intro = (f'<p class="muted">Parallel paper books, one per strategy, on the '
+             f'same weekly screen — the {_dterm("fleet", "live forward test")}. '
+             f'Same information, different weighting.</p>')
+    if not live:
+        return (f'<section class="card"><h3><span class="term" data-term="fleet">'
+                f'Strategy fleet</span></h3>{intro}'
+                f'<div class="empty">No member books yet — the fleet seeds at the '
+                f'next monthly buy window (1st–5th).</div></section>')
+    trs = []
+    for i, r in enumerate(rows, start=1):
+        badge = ('<span class="tag pos">LIVE</span>' if r.get("kind") == "flagship"
+                 else '<span class="tag muted">CONTROL</span>' if r.get("kind") == "hold"
+                 else "")
+        val, pnl = r.get("value"), r.get("pnl")
+        ret, exc = r.get("ret_pct"), r.get("excess_pct")
+        tone = "pos" if (pnl or 0) >= 0 else "neg"
+        etone = "pos" if (exc or 0) >= 0 else "neg"
+        trs.append(
+            f'<tr><td class="mono muted">{i if val is not None else "—"}</td>'
+            f'<td><strong>{_esc(r.get("label"))}</strong> {badge}</td>'
+            f'<td class="right mono">{money(val) if val is not None else "—"}</td>'
+            f'<td class="right mono {tone if pnl is not None else ""}">'
+            f'{f"{_arrow(pnl)} {money(pnl)}" if pnl is not None else "—"}</td>'
+            f'<td class="right mono {tone if ret is not None else ""}">'
+            f'{f"{ret:+.1f}%" if ret is not None else "pending"}</td>'
+            f'<td class="right mono {etone if exc is not None else ""}">'
+            f'{f"{exc:+.1f}%" if exc is not None else "—"}</td></tr>')
+    tbl = (f'<table class="tbl"><thead><tr><th>#</th><th>Strategy</th>'
+           f'<th class="right">Value</th><th class="right">P&amp;L</th>'
+           f'<th class="right">Return</th><th class="right">vs SPY</th></tr>'
+           f'</thead><tbody>{"".join(trs)}</tbody></table>')
+    return (f'<section class="card scroll-x"><h3><span class="term" data-term="fleet">'
+            f'Strategy fleet</span> <span class="muted thin">· {len(live)} of '
+            f'{len(rows)} racing</span></h3>{intro}{tbl}'
+            f'<p class="callout">Every book starts at $10,000 paper. Short histories '
+            f'are noise — let the race run before crowning anyone.</p></section>')
+
+
 def _sector_donut(sectors: dict) -> str:
     if not sectors:
         return ""
@@ -1144,11 +1187,13 @@ def dashboard_html(data: dict) -> str:
                   f'{_decisions_section(data.get("decisions") or [])}</div>')
     screen_zone = (_zone_header("screen", "Today's screen")
                    + _screener_stats(summary) + today_grid)
-    # zone: Is it working? — drop the header if both cards are empty
+    # zone: Is it working? — fleet leaderboard leads; drop the header if empty
+    fleet = _fleet_section(data.get("fleet") or [])
     sc = _scorecard_section(data.get("scorecard"))
     sl = _signal_lab_section(data.get("signal_lab") or {})
-    working_zone = (_zone_header("working", "Is it working?")
-                    + f'<div class="grid2">{sc}{sl}</div>') if (sc or sl) else ""
+    working_zone = ((_zone_header("working", "Is it working?") + fleet
+                     + f'<div class="grid2">{sc}{sl}</div>')
+                    if (fleet or sc or sl) else "")
     # zone: Under the hood — donut + vetoes, then health/sentiment/tournament/copilot
     donut = _sector_donut(sectors)
     vet = _vetoes_section(sectors, summary, names)

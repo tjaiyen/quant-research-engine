@@ -33,7 +33,11 @@ MAX_ADV_PCT: float = 0.01
 MIN_POSITION_VALUE_USD: float = 10.00
 
 # ── Signal Quality Gates ───────────────────────────────────────────────────
-MIN_COMPOSITE_TO_BUY: float = 0.60
+# MIN_COMPOSITE_TO_BUY is env-overridable for the strategy FLEET: a re-weighted
+# composite lives on a different scale (pure-ARIMA hovers near 0.5), so each
+# fleet member sets its own calibrated floor. Default unchanged for the
+# flagship. Self-validation below still enforces > SIGNAL_EXIT_THRESHOLD.
+MIN_COMPOSITE_TO_BUY: float = float(os.getenv("MIN_COMPOSITE_TO_BUY", "0.60"))
 SIGNAL_EXIT_THRESHOLD: float = 0.45
 SCORE_DECAY_WARN_DELTA: float = -0.20
 TOP_N_PER_SECTOR: int = 2

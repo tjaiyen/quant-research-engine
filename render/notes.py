@@ -924,3 +924,46 @@ def strategy_backtest_note(data: dict) -> str:
         f"## Equity curve (rebased to 100)\n\n{equity_chart(snaps)}\n"
     )
     return document(fm, body)
+
+
+def fleet_note(data: dict) -> str:
+    """Strategy-fleet leaderboard: N parallel paper books, one per strategy.
+
+    ``data['rows']`` come from ``render.build.fleet_reads`` — sorted by return,
+    pending members (no book yet) last with value None.
+    """
+    rows = data.get("rows", []) or []
+    live = [r for r in rows if r.get("value") is not None]
+    fm = {"title": "Fleet", "type": "tracker-fleet", "as_of": data.get("as_of"),
+          "n_members": len(rows), "n_live": len(live)}
+    intro = ("Several paper portfolios race in parallel, each following ONE "
+             "strategy on the same weekly screen — the live forward test the "
+             "Signal Lab said is the real arbiter. Same information, different "
+             "weighting; the leaderboard is who's actually ahead.")
+    if not live:
+        return document(fm, f"# 🏁 Strategy fleet\n\n{intro}\n\n_No member books "
+                        "yet — the fleet seeds at the next monthly buy window "
+                        "(1st–5th)._\n")
+
+    def _row(r):
+        badge = (" **LIVE**" if r.get("kind") == "flagship"
+                 else " *(control)*" if r.get("kind") == "hold" else "")
+        ret = r.get("ret_pct")
+        exc = r.get("excess_pct")
+        return [
+            f"**{r.get('label')}**{badge}",
+            money(r["value"]) if r.get("value") is not None else "—",
+            (f"{'+' if (r.get('pnl') or 0) >= 0 else ''}{money(r.get('pnl'))}"
+             if r.get("pnl") is not None else "—"),
+            f"{ret:+.1f}%" if ret is not None else "—",
+            f"{exc:+.1f}% vs SPY" if exc is not None else "—",
+            str(r.get("n_positions") if r.get("n_positions") is not None else "—"),
+        ]
+
+    tbl = table(["Strategy", "Value", "P&L", "Return", "Excess", "Holdings"],
+                [_row(r) for r in rows])
+    return document(fm, (
+        f"# 🏁 Strategy fleet\n\n{intro}\n\n{tbl}\n\n"
+        "_Every book is paper money on the same $10k start. Short histories are "
+        "noise — let the race run before crowning anyone._\n"
+    ))

@@ -358,6 +358,18 @@ GLOSSARY: dict[str, dict] = {
         "example": "IC −0.12 → 'DROP / FLIP — predicts backwards'.",
     },
 
+    # ── fleet ───────────────────────────────────────────────────────────────
+    "fleet": {
+        "plain": "Strategy fleet", "term": "fleet",
+        "short": "Several paper portfolios race in parallel, each following one strategy on the same weekly screen.",
+        "long": "Instead of forward-testing one strategy at a time, the fleet runs a separate $10,000 "
+                "paper portfolio per strategy — same screen, same safety vetoes, different signal "
+                "weighting. The leaderboard shows who is actually ahead on real forward data, which "
+                "is the evidence a backtest can't fake.",
+        "example": "ARIMA-only, the default 5-signal blend, and a momentum mix each run their own "
+                   "$10k book; SPY buy-hold rides along as the control.",
+    },
+
     # ── tournament ──────────────────────────────────────────────────────────
     "tournament": {
         "plain": "Strategy bake-off", "term": "tournament",

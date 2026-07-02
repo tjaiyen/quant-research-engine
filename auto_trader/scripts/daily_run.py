@@ -5,6 +5,7 @@ L3: HMM staleness check via ``screener.regime.hmm_trainer.should_retrain``.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from typing import Iterable
@@ -43,11 +44,17 @@ def run_daily_monitor() -> dict:
     # weekly universe seed runs. Lean (~held + SPY, not the 220 universe);
     # best-effort so an offline/yfinance hiccup never blocks the monitor.
     try:
-        from tasks.refresh_prices import main as refresh_prices
-        held = sorted({p["ticker"] for p in get_all_positions()})
-        if held:
-            refresh_prices([*held, "SPY"])   # symbols are positional args
-            logger.info("daily: refreshed prices for %d held tickers + SPY", len(held))
+        # Fleet members skip the fetch — the flagship's monitor refreshed the
+        # SHARED price cache minutes earlier; N members re-fetching is waste.
+        if os.getenv("FLEET_SKIP_REFRESH") == "1":
+            logger.info("daily: price refresh skipped (fleet member; shared cache)")
+        else:
+            from tasks.refresh_prices import main as refresh_prices
+            held = sorted({p["ticker"] for p in get_all_positions()})
+            if held:
+                refresh_prices([*held, "SPY"])   # symbols are positional args
+                logger.info("daily: refreshed prices for %d held tickers + SPY",
+                            len(held))
     except Exception as exc:
         logger.warning("daily price refresh skipped (%s)", exc)
 

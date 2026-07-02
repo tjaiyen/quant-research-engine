@@ -10,6 +10,7 @@ Replaces the Dash app + Fly cron with local rituals:
     track paper cycle            monthly buy cycle (no-op outside the buy window)
     track paper stop [--clear]   set / clear the trading halt flag
     track report                 regenerate the Obsidian notes in `90 Tracker/`
+    track fleet cycle|monitor|status  strategy fleet — parallel paper portfolios
     track score                  grade past picks vs actual returns (Scorecard.md)
     track review                 weekly-review slide deck (Review.md; Slides Extended)
     track clusters               k-means diversification clusters (Clusters.md)
@@ -594,6 +595,65 @@ def _write_readme_if_absent(tracker_root: Path) -> None:
         readme.write_text(_README, encoding="utf-8")
 
 
+def cmd_fleet(args: argparse.Namespace) -> int:
+    """Strategy fleet — run every non-flagship member as an isolated subprocess.
+
+    Each member gets its own state dir via env (TRADER_DB_PATH /
+    MOCK_BROKER_STATE / SCREENER_CACHE_PATH); the flagship book is never driven
+    from here. A member failure is reported but doesn't stop the others.
+    """
+    _preflight()
+    import subprocess
+
+    from auto_trader.fleet import (FLEET, SHARED_CACHE, member_env,
+                                   write_member_cache)
+
+    if args.action == "status":
+        from render.build import fleet_reads
+        rows = fleet_reads()
+        if not rows:
+            print("fleet: no member books yet — run `track fleet cycle` in a buy window")
+            return 0
+        print(f"{'strategy':28} {'value':>12} {'P&L':>10} {'return':>8}")
+        for r in rows:
+            val, pnl, ret = r.get("value"), r.get("pnl"), r.get("ret_pct")
+            val_s = f"${val:,.2f}" if val is not None else "—"
+            pnl_s = f"${pnl:,.2f}" if pnl is not None else "—"
+            ret_s = f"{ret:+.1f}%" if ret is not None else "—"
+            print(f"{r['label']:28} {val_s:>12} {pnl_s:>10} {ret_s:>8}")
+        return 0
+
+    members = [m for m in FLEET if m.get("kind") != "flagship"]
+    failures: list[str] = []
+    for m in members:
+        try:
+            if args.action == "cycle" and m.get("kind") == "strategy":
+                if not SHARED_CACHE.exists():
+                    print("fleet: no shared screener cache — run `track screen` first")
+                    return 1
+                write_member_cache(m)
+            cmd = [sys.executable, "-m", "auto_trader.fleet",
+                   "--member", m["id"], "--mode", args.action]
+            if args.action == "cycle" and getattr(args, "force_window", False):
+                cmd.append("--force-window")
+            r = subprocess.run(cmd, env=member_env(m), cwd=str(REPO_ROOT),
+                               capture_output=True, text=True, timeout=1800)
+            ok = r.returncode == 0
+            print(f"  {m['id']:10} {args.action}: {'ok' if ok else 'FAIL'}")
+            if not ok:
+                failures.append(m["id"])
+                for line in (r.stdout + r.stderr).strip().splitlines()[-3:]:
+                    print(f"    {line}")
+        except Exception as exc:                      # noqa: BLE001 — keep racing
+            failures.append(m["id"])
+            print(f"  {m['id']:10} {args.action}: ERROR {exc}")
+    if failures:
+        print(f"fleet {args.action}: {len(failures)} failed: {', '.join(failures)}")
+        return 1
+    print(f"fleet {args.action}: all {len(members)} members ok")
+    return 0
+
+
 # ── Parser ───────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -624,6 +684,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     rep = sub.add_parser("report", help="regenerate Obsidian notes")
     rep.set_defaults(func=cmd_report)
+
+    fl = sub.add_parser("fleet", help="strategy fleet — parallel paper portfolios (Fleet.md)")
+    fl.add_argument("action", choices=("cycle", "monitor", "status"))
+    fl.add_argument("--force-window", action="store_true",
+                    help="bypass the MOO wait when seeding manually inside the "
+                         "1st-5th window (scheduled runs never use this)")
+    fl.set_defaults(func=cmd_fleet)
 
     scp = sub.add_parser("score", help="grade past picks vs actual returns (Scorecard.md)")
     scp.set_defaults(func=cmd_score)
