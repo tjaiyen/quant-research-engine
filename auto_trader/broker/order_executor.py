@@ -189,6 +189,8 @@ def confirm_fills(order_ids: list[str], timeout_seconds: int = 300) -> dict:
     """
     result: dict[str, list] = {"full": [], "partial": [], "failed": [], "timeout": []}
     pending = list(order_ids)
+    last_status: dict[str, dict] = {}
+    partial_seen: set[str] = set()
     start = time.time()
     while pending and (time.time() - start) < timeout_seconds:
         still_pending: list[str] = []
@@ -199,15 +201,22 @@ def confirm_fills(order_ids: list[str], timeout_seconds: int = 300) -> dict:
                 logger.error("Status check failed %s: %s", oid, exc)
                 still_pending.append(oid)
                 continue
+            last_status[oid] = s
             status = s["status"]
             if status == "filled":
                 result["full"].append(s)
             elif status == "partially_filled":
-                result["partial"].append(s)
-                logger.warning(
-                    "PARTIAL FILL: %s %s shares",
-                    s.get("symbol", "?"), s["filled_qty"],
-                )
+                # A partially-filled order is STILL WORKING — keep polling.
+                # Treating it as settled recorded only the partial in the
+                # trade ledger while the rest filled seconds later (caught by
+                # the reconciler on the first real Alpaca cycle, 2026-07-02).
+                if oid not in partial_seen:
+                    partial_seen.add(oid)
+                    logger.warning(
+                        "PARTIAL FILL (still working): %s %s shares",
+                        s.get("symbol", "?"), s["filled_qty"],
+                    )
+                still_pending.append(oid)
             elif status in ("canceled", "expired", "rejected"):
                 result["failed"].append(s)
             else:
@@ -215,7 +224,14 @@ def confirm_fills(order_ids: list[str], timeout_seconds: int = 300) -> dict:
         pending = still_pending
         if pending:
             time.sleep(FILL_CONFIRM_POLL_INTERVAL)
-    result["timeout"] = pending  # type: ignore[assignment]
+    # Deadline hit: bucket whatever is still live by its last-known state so
+    # the sequencer persists the partial shares it actually got.
+    for oid in pending:
+        s = last_status.get(oid)
+        if s and s.get("status") == "partially_filled":
+            result["partial"].append(s)
+        else:
+            result["timeout"].append(oid)
     return result
 
 

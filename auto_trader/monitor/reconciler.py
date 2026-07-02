@@ -96,6 +96,8 @@ def reconcile(tolerance: float = TOLERANCE) -> dict:
     replay = _replay_ledger()
 
     # ── 1. Broker book vs ledger replay ──────────────────────────────────
+    # Mock era: read the state file. Alpaca era (post-cutover): pull the live
+    # paper account read-only. Same comparison either way.
     state_path = _broker_state_path()
     broker = None
     if state_path.exists():
@@ -105,7 +107,20 @@ def reconcile(tolerance: float = TOLERANCE) -> dict:
             discrepancies.append({"field": "broker_state", "expected": "readable",
                                   "actual": f"unreadable ({exc})", "delta": None})
     else:
-        notes.append(f"broker state absent ({state_path.name}) — skipped")
+        try:
+            from auto_trader.credentials import use_mock_broker
+            if not use_mock_broker():
+                from auto_trader.broker.alpaca_client import get_client
+                cl = get_client()
+                broker = {"cash": float(cl.get_account().cash),
+                          "positions": {p.symbol: {"qty": float(p.qty),
+                                                   "cost": float(p.avg_entry_price)}
+                                        for p in cl.list_positions()}}
+                notes.append("broker book read live from Alpaca paper")
+        except Exception as exc:  # noqa: BLE001 — network down ≠ drift
+            notes.append(f"live broker unreachable ({exc}) — broker checks skipped")
+        if broker is None and not notes:
+            notes.append(f"broker state absent ({state_path.name}) — skipped")
     if broker is not None:
         n_checks += 1
         _check(discrepancies, "cash(broker vs ledger)",
