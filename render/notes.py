@@ -926,6 +926,33 @@ def strategy_backtest_note(data: dict) -> str:
     )
     snaps = [{"snapshot_date": c["date"], "total_value": c["strategy"],
               "benchmark_value": c["spy"]} for c in curve]
+
+    val = data.get("validation") or {}
+    val_section = ""
+    perm, boot = val.get("permutation") or {}, val.get("bootstrap") or {}
+    if perm or boot:
+        rows = []
+        if perm.get("error"):
+            rows.append(["Permutation max-DD", f"_{perm['error']}_", "—"])
+        elif perm:
+            p = perm.get("p_value_max_dd")
+            rows.append(["Permutation max-DD p-value", num(p, 3),
+                         "✅ path benign vs own returns" if (p or 0) > 0.05
+                         else "⚠️ losses cluster worse than chance"])
+        if boot.get("error"):
+            rows.append(["Bootstrap Sharpe", f"_{boot['error']}_", "—"])
+        elif boot:
+            rows.append([f"Bootstrap Sharpe {int((boot.get('confidence') or 0.95)*100)}% CI",
+                         f"[{num(boot.get('ci_lower'), 2)}, {num(boot.get('ci_upper'), 2)}] per-period",
+                         f"P(Sharpe>0) = {pct(boot.get('prob_positive'), 0)}"])
+        val_section = (
+            "## Validation (resampling)\n\n"
+            + table(["Check", "Result", "Read"], rows) + "\n\n"
+            "_Permutation shuffles the order of the same segment returns (Sharpe is "
+            "order-invariant, so only the drawdown path is testable); bootstrap "
+            "resamples them to gauge Sharpe stability. Complements DSR/CPCV._\n\n"
+        )
+
     body = (
         "# Strategy backtest (portfolio simulation)\n\n"
         f"{verdict}\n\n"
@@ -935,6 +962,7 @@ def strategy_backtest_note(data: dict) -> str:
         f"## Metrics\n\n{metrics_tbl}\n\n"
         f"_{data.get('n_rebalances', 0)} rebalances · ~{data.get('avg_picks', 0):.0f} "
         "picks held each period._\n\n"
+        f"{val_section}"
         f"## Equity curve (rebased to 100)\n\n{equity_chart(snaps)}\n"
     )
     return document(fm, body)

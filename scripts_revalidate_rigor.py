@@ -14,6 +14,7 @@ from screener.tournament.variants import default_variants
 from screener.tournament.run import run_tournament
 from screener.rigor.stats import deflated_sharpe, per_period_sharpe
 from screener.rigor.cpcv import cpcv_splits, cpcv_distribution
+from screener.rigor.resample import bootstrap_sharpe_ci, permutation_test
 
 PANEL = os.path.join("store", "tournament_panel.json")
 CAND = {"arima": 0.62, "sharpe": 0.38}   # the live candidate weighting
@@ -69,6 +70,22 @@ def main() -> None:
           f"(n_trials={dsr['n_trials']})")
     print(f"  DSR = P(true SR>0 after deflation) : {dsr['dsr']:.3f}  "
           f"(n_obs={dsr['n_obs']})")
+
+    print("\n=== Resampling (permutation max-DD + bootstrap Sharpe, net 20bps) ===")
+    perm = permutation_test(cand_seg)
+    boot = bootstrap_sharpe_ci(cand_seg)
+    if "error" in perm:
+        print(f"  permutation: {perm['error']}")
+    else:
+        print(f"  permutation max-DD p-value : {perm['p_value_max_dd']:.3f}  "
+              f"(observed {perm['observed_max_dd']*100:.1f}%, "
+              f"sim median {perm['sim_max_dd_median']*100:.1f}%)")
+    if "error" in boot:
+        print(f"  bootstrap  : {boot['error']}")
+    else:
+        print(f"  bootstrap Sharpe {int(boot['confidence']*100)}% CI : "
+              f"[{boot['ci_lower']:.2f}, {boot['ci_upper']:.2f}] per-period  "
+              f"P(SR>0)={boot['prob_positive']*100:.0f}%")
 
     print("\n=== CPCV out-of-sample distribution (net 20bps) ===")
     spy_rets = [s.get("spy_return") or 0.0 for s in panel["segments"]]

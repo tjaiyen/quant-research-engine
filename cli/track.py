@@ -541,6 +541,13 @@ def cmd_sim(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 1
 
+    if data.get("seg_returns"):
+        from screener.rigor.resample import bootstrap_sharpe_ci, permutation_test
+        data["validation"] = {
+            "permutation": permutation_test(data["seg_returns"]),
+            "bootstrap": bootstrap_sharpe_ci(data["seg_returns"]),
+        }
+
     _ = datetime.now(timezone.utc)
     atomic_write(tracker_dir() / "StrategyBacktest.md", notes.strategy_backtest_note(data))
     m = data.get("metrics", {})
