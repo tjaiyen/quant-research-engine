@@ -39,9 +39,14 @@ def build_signal_panel(years: int = 3, rebalance: str = "quarter",
                        score_fn=None, regime_fn=None) -> dict:
     """Return the causal signal panel (built once, cached to store/)."""
     import os
+
+    from screener.config import CANDIDATE_FACTORS_ENABLED
     cache_path = Path(cache_path) if cache_path else _CACHE
+    # candidate_factors is part of the key: flipping the flag must invalidate
+    # the cached panel (its rows would otherwise lack the factor columns).
     key = {"years": years, "rebalance": rebalance, "max_per_sector": max_per_sector,
-           "regime_mode": os.getenv("REGIME_LABEL_MODE", "composite")}
+           "regime_mode": os.getenv("REGIME_LABEL_MODE", "composite"),
+           "candidate_factors": CANDIDATE_FACTORS_ENABLED}
     if use_cache and cache_path.exists():
         try:
             cached = json.loads(cache_path.read_text())
@@ -126,6 +131,14 @@ def build_signal_panel(years: int = 3, rebalance: str = "quarter",
                     signals["lowvol"] = float(lv)
             except Exception:
                 pass
+            if CANDIDATE_FACTORS_ENABLED:
+                try:
+                    from screener.signals.candidate_factors import (
+                        candidate_factor_scores,
+                    )
+                    signals.update(candidate_factor_scores(t, ph_train))
+                except Exception:
+                    pass
             panel["rows"].append({
                 "d0": str(d0.date()), "ticker": t, "sector": sector_of.get(t),
                 "signals": signals,
