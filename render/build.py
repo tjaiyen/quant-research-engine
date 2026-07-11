@@ -436,6 +436,17 @@ def build_all() -> dict:
     except Exception as exc:
         logger.debug("scorecard/review skipped: %s", exc)
 
+    # 7b) Behavior — engine trade-quality mirror over the fill ledger (U30).
+    try:
+        from auto_trader.monitor.behavior import analyze_behavior
+
+        behavior = analyze_behavior()
+        behavior["as_of"] = now_iso
+        atomic_write(root / "Behavior.md", notes.behavior_note(behavior))
+        written.append("Behavior.md")
+    except Exception as exc:
+        logger.debug("behavior note skipped: %s", exc)
+
     # 8) Visual HTML dashboard (self-contained; auto-refreshing in a browser).
     try:
         from render import html as _html

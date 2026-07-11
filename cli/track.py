@@ -178,6 +178,32 @@ def cmd_score(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_behavior(args: argparse.Namespace) -> int:
+    """U30: engine trade-quality mirror over the fill ledger → Behavior.md."""
+    _preflight()
+    from datetime import datetime, timezone
+
+    from auto_trader.monitor.behavior import analyze_behavior
+    from render import notes
+    from render.markdown import atomic_write, tracker_dir
+
+    data = analyze_behavior()
+    data["as_of"] = datetime.now(timezone.utc).isoformat()
+    atomic_write(tracker_dir() / "Behavior.md", notes.behavior_note(data))
+    print(f"Behavior written → {tracker_dir()}/Behavior.md")
+    n = data.get("n_roundtrips", 0)
+    if n:
+        disp = data.get("disposition") or {}
+        print(f"  {n} closed roundtrips ({data.get('confidence')} confidence) · "
+              f"win rate {data.get('win_rate', 0):.0%} · "
+              f"median hold {data.get('median_hold_days', 0):.1f}d"
+              + (f" · disposition ratio {disp['ratio']:.2f}"
+                 if disp.get("ratio") else ""))
+    else:
+        print(f"  no closed roundtrips yet ({data.get('n_open_positions', 0)} open)")
+    return 0
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Phase 29: on-demand accounting reconciliation. Exit 1 on drift."""
     _preflight()
@@ -721,6 +747,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     scp = sub.add_parser("score", help="grade past picks vs actual returns (Scorecard.md)")
     scp.set_defaults(func=cmd_score)
+
+    bh = sub.add_parser("behavior", help="engine trade-quality mirror over the "
+                        "fill ledger (Behavior.md)")
+    bh.set_defaults(func=cmd_behavior)
 
     rv = sub.add_parser("review", help="weekly-review slide deck (Review.md; Slides Extended)")
     rv.set_defaults(func=cmd_review)

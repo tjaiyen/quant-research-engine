@@ -968,6 +968,109 @@ def strategy_backtest_note(data: dict) -> str:
     return document(fm, body)
 
 
+def behavior_note(data: dict) -> str:
+    """Engine trade-quality mirror (Behavior.md) — from analyze_behavior()."""
+    n = data.get("n_roundtrips", 0)
+    conf = data.get("confidence", "low")
+    fm = {
+        "title": "Behavior",
+        "type": "tracker-behavior",
+        "as_of": data.get("as_of"),
+        "n_roundtrips": n,
+        "n_open_positions": data.get("n_open_positions"),
+        "confidence": conf,
+        "win_rate": None if data.get("win_rate") is None else round(data["win_rate"], 3),
+        "total_pnl": None if data.get("total_pnl") is None else round(data["total_pnl"], 2),
+    }
+    if n == 0:
+        return document(fm, "# Behavior\n\n_No closed roundtrips yet — the "
+                        "ledger has nothing to analyze. This note fills in as "
+                        "positions open AND close._\n")
+
+    conf_line = {"low": f"⚠️ Only **{n} closed roundtrips** — every stat below "
+                        "is directional, not significant.",
+                 "moderate": f"{n} closed roundtrips — stats are indicative, "
+                             "treat flags as hypotheses.",
+                 "ok": f"{n} closed roundtrips."}[conf]
+
+    head_tbl = table(["Stat", "Value"], [
+        ["Closed roundtrips", n],
+        ["Open positions (excluded)", data.get("n_open_positions", 0)],
+        ["Win rate", pct(data.get("win_rate"), 0)],
+        ["Total realized P&L", money(data.get("total_pnl"))],
+        ["Median hold", f"{num(data.get('median_hold_days'), 1)} days"],
+        ["Avg win / avg loss", f"{money(data.get('avg_win'))} / {money(data.get('avg_loss'))}"],
+        ["Profit factor", num(data.get("profit_factor"), 2)],
+    ])
+
+    sections = [f"# Behavior — engine trade-quality mirror\n\n{conf_line}\n\n"
+                "_The deterministic engine made these trades; this note asks "
+                "whether its realised behaviour shows disposition-shaped "
+                "outcomes, churn, or exit-timing drag._\n\n"
+                f"## Headline\n\n{head_tbl}\n"]
+
+    disp = data.get("disposition")
+    if disp:
+        flag = "⚠️ **flagged**" if disp.get("flagged") else "✅ not flagged"
+        sections.append(
+            "## Disposition check\n\n"
+            f"Losers held **{num(disp.get('median_hold_losers'), 1)}d** vs winners "
+            f"**{num(disp.get('median_hold_winners'), 1)}d** → ratio "
+            f"**{num(disp.get('ratio'), 2)}** ({flag}; >1.5 = holding losers "
+            "longer than winners).\n")
+    else:
+        sections.append("## Disposition check\n\n_Needs ≥3 winners and ≥3 "
+                        "losers to compute — not enough closed trades yet._\n")
+
+    ot = data.get("overtrading") or {}
+    if ot.get("expected") is not None:
+        verdict = (f"⚠️ **{ot['excess']} excess** roundtrips (P&L impact "
+                   f"{money(ot.get('excess_pnl'))})" if ot.get("excess")
+                   else "✅ within budget")
+        sections.append(
+            "## Overtrading check\n\n"
+            f"Budget ≈ **{ot['expected']}** roundtrips for this span (1 per "
+            f"2×median-hold); actual **{ot['actual']}** → {verdict}.\n")
+
+    att = data.get("attribution") or {}
+    if att:
+        sections.append(
+            "## Exit-timing attribution\n\n"
+            f"Own hold band (p25–p75): **{num(att.get('band_lo_days'), 1)}–"
+            f"{num(att.get('band_hi_days'), 1)} days**. Early-exit shortfall on "
+            f"winners: **{money(att.get('early_exit_shortfall'))}** · late-exit "
+            f"excess on losers: **{money(att.get('late_exit_excess'))}**.\n")
+        cf = att.get("counterfactuals") or []
+        if cf:
+            sections.append("### Top counterfactuals\n\n" + table(
+                ["Ticker", "Exit", "Hold (d)", "P&L", "Impact", "Reason"],
+                [[c["ticker"], str(c["exit_at"])[:10], num(c["hold_days"], 1),
+                  money(c["pnl"]), money(c["impact"]), c["reason"]] for c in cf]) + "\n")
+
+    churn = data.get("stop_churn") or []
+    sections.append("## Stop-churn re-entries\n\n" + (
+        table(["Ticker", "Stop exit", "Re-entry", "Re-entry P&L"],
+              [[c["ticker"], str(c["stop_exit"])[:10], str(c["reentry"])[:10],
+                money(c["reentry_pnl"])] for c in churn]) + "\n"
+        if churn else "_None — no re-buys within 7 days of a stop-loss exit._\n"))
+
+    for key, title in (("by_exit_reason", "By exit reason"),
+                       ("by_regime_at_entry", "By regime at entry")):
+        rows = data.get(key) or []
+        if rows:
+            sections.append(f"## {title}\n\n" + table(
+                ["Group", "N", "Win rate", "Total P&L"],
+                [[r["group"], r["n"], pct(r["win_rate"], 0),
+                  money(r["total_pnl"])] for r in rows]) + "\n")
+
+    gaps = data.get("n_ledger_gaps", 0)
+    if gaps:
+        sections.append(f"_⚠️ {gaps} SELL fill(s) had missing cost-basis or no "
+                        "tracked open episode — their P&L contributes $0._\n")
+
+    return document(fm, "\n".join(sections))
+
+
 def digest_note(data: dict) -> str:
     """Weekly digest — the one note that summarizes the week (Tier 0).
 
