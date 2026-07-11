@@ -300,6 +300,14 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     data = {"as_of": datetime.now(timezone.utc).isoformat(),
             "walk_forward": wf, "ic": ic, "regime": rg}
     atomic_write(tracker_dir() / "Backtest.md", notes.backtest_note(data))
+    from utils.run_card import write_run_card
+    write_run_card("backtest",
+                   {"windows": args.windows, "samples": args.samples,
+                    "max_per_sector": args.max_per_sector,
+                    "max_tickers": args.max_tickers},
+                   metrics={"mean_lift": wf.get("mean_lift"),
+                            "win_rate": wf.get("win_rate"),
+                            "n_windows": wf.get("n_windows")})
     print(f"\nBacktest written → {tracker_dir()}/Backtest.md")
     print(f"  walk-forward: {wf.get('n_windows')} windows, mean lift "
           f"{wf.get('mean_lift', 0):.4f}, win rate {wf.get('win_rate', 0):.0%}")
@@ -431,6 +439,14 @@ def cmd_signal_lab(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"  (signal-lab sidecar not written: {exc})", file=sys.stderr)
 
+    from utils.run_card import write_run_card
+    write_run_card("signal-lab",
+                   {"years": args.years, "rebalance": args.rebalance,
+                    "max_per_sector": args.max_per_sector,
+                    "rebuild": bool(args.rebuild)},
+                   metrics={s: {"ic": d["ic"], "verdict": d["verdict"]}
+                            for s, d in analysis["signals"].items()},
+                   validation=val)
     print("Per-signal predictive power (IC):")
     for s, d in sorted(analysis["signals"].items(), key=lambda kv: -(kv[1]["ic"] or -9)):
         print(f"  {s:12} IC {(d['ic'] or 0)*100:+5.1f}%   {d['verdict']}")
@@ -487,6 +503,15 @@ def cmd_tournament(args: argparse.Namespace) -> int:
         }))
     except Exception as exc:
         print(f"  (tournament sidecar not written: {exc})", file=sys.stderr)
+    from utils.run_card import write_run_card
+    write_run_card("tournament",
+                   {"years": args.years, "rebalance": args.rebalance,
+                    "max_per_sector": args.max_per_sector, "cost_bps": cost_bps,
+                    "rebuild": bool(args.rebuild)},
+                   metrics={"winner": attr.get("winner"),
+                            "beat_spy": attr.get("beat_spy"),
+                            "beat_random": attr.get("beat_random"),
+                            "n_segments": tour["n_segments"]})
     print(f"\n🏆 Winner: {attr.get('winner')}")
     print(attr.get("verdict", ""))
     print(f"→ {tracker_dir()}/Tournament.md")
@@ -578,6 +603,12 @@ def cmd_sim(args: argparse.Namespace) -> int:
 
     _ = datetime.now(timezone.utc)
     atomic_write(tracker_dir() / "StrategyBacktest.md", notes.strategy_backtest_note(data))
+    from utils.run_card import write_run_card
+    write_run_card("sim",
+                   {"years": args.years, "rebalance": args.rebalance,
+                    "max_per_sector": args.max_per_sector},
+                   metrics=data.get("metrics"),
+                   validation=data.get("validation"))
     m = data.get("metrics", {})
     print(f"\nStrategy backtest written → {tracker_dir()}/StrategyBacktest.md")
     if data.get("equity_curve"):
