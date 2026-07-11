@@ -42,11 +42,13 @@ def build_signal_panel(years: int = 3, rebalance: str = "quarter",
 
     from screener.config import CANDIDATE_FACTORS_ENABLED
     cache_path = Path(cache_path) if cache_path else _CACHE
-    # candidate_factors is part of the key: flipping the flag must invalidate
-    # the cached panel (its rows would otherwise lack the factor columns).
+    # candidate_factors enters the key ONLY when on: enabling must invalidate
+    # the cached panel (its rows lack the factor columns), but flag-off keeps
+    # matching pre-U33 caches — no forced rebuild for the default path.
     key = {"years": years, "rebalance": rebalance, "max_per_sector": max_per_sector,
-           "regime_mode": os.getenv("REGIME_LABEL_MODE", "composite"),
-           "candidate_factors": CANDIDATE_FACTORS_ENABLED}
+           "regime_mode": os.getenv("REGIME_LABEL_MODE", "composite")}
+    if CANDIDATE_FACTORS_ENABLED:
+        key["candidate_factors"] = True
     if use_cache and cache_path.exists():
         try:
             cached = json.loads(cache_path.read_text())

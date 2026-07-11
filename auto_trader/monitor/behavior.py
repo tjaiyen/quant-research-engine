@@ -84,6 +84,14 @@ def build_roundtrips(fills: list[dict] | None = None) -> dict:
             # or data gap; count it and move on.
             n_gaps += 1
             continue
+        if shares > ep["open_shares"] + 1e-9:
+            # Oversell vs the tracked episode (ledger gap / data corruption
+            # upstream) — clamp to what's actually open so phantom shares
+            # can't inflate P&L, and count it loudly.
+            n_gaps += 1
+            logger.warning("behavior: SELL %s %.4f sh exceeds open %.4f — "
+                           "clamped (ledger gap)", tkr, shares, ep["open_shares"])
+            shares = ep["open_shares"]
         if f.get("cost_basis") is None:
             n_gaps += 1
             logger.warning("behavior: SELL %s %.4f sh has NULL cost_basis — "

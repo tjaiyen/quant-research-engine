@@ -60,6 +60,19 @@ def test_open_position_excluded_and_counted():
     assert report["n_roundtrips"] == 0 and report["n_open_positions"] == 1
 
 
+def test_oversell_is_clamped_not_credited():
+    # SELL for more shares than the episode holds → clamp to open shares,
+    # count a gap; P&L must use the CLAMPED quantity (no phantom shares).
+    initialize_db()
+    _fill("OVR", "BUY", 10, 100.0, "2026-03-01T15:00:00")
+    _fill("OVR", "SELL", 15, 110.0, "2026-03-10T15:00:00", cost_basis=100.0)
+    out = build_roundtrips()
+    (rt,) = out["roundtrips"]
+    assert abs(rt["pnl"] - 100.0) < 1e-9              # 10 sh, not 15
+    assert out["n_ledger_gaps"] == 1
+    assert out["n_open"] == 0
+
+
 def test_null_cost_basis_is_a_loud_gap_not_a_crash():
     initialize_db()
     _fill("DDD", "BUY", 10, 50.0, "2026-03-01T15:00:00")

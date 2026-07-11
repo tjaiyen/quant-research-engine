@@ -23,7 +23,12 @@ def _parse_watchlist(raw: str) -> tuple[str, ...]:
 
 
 def load_settings() -> Settings:
-    db_rel = os.getenv("DB_PATH", "db/cockpit.sqlite")
+    # Default must match doctor.py's cache_path default (store/cockpit.sqlite)
+    # — they had drifted (db/ was the Fly-volume-era default), so doctor
+    # green-lit the real cache while the engine silently read an empty
+    # auto-created DB whenever DB_PATH was unset (caught by the U29 sim
+    # validation probe: a 2y backtest returned all-zero segments).
+    db_rel = os.getenv("DB_PATH", "store/cockpit.sqlite")
     # Support both relative (resolves under ROOT) and absolute paths so the
     # production volume mount (e.g. /app/db/cockpit.sqlite) works.
     db_path_arg = Path(db_rel)
