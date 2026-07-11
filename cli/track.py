@@ -650,6 +650,15 @@ def cmd_status(args: argparse.Namespace) -> int:
               f"unrealized {money(latest.get('unrealized_pnl'))}")
     except Exception as exc:
         print(f"Paper:      (ledger unavailable: {exc})")
+
+    try:
+        from auto_trader.credentials import read_halt
+        h = read_halt()
+        if h:
+            print(f"⛔ HALTED   since {h.get('tripped_at', '?')} "
+                  f"by {h.get('by', '?')}: {h.get('reason') or '(no reason)'}")
+    except Exception:
+        pass
     return 0
 
 
