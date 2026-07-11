@@ -537,6 +537,21 @@ def signal_lab_note(data: dict) -> str:
                    f"means the IC is **not** significant after the multiple-testing "
                    f"correction — suggestive, not proven (U28)._")
 
+    lc = data.get("lifecycle") or {}
+    lc_tbl = ""
+    if lc.get("years") and lc.get("signals"):
+        marks = {"alive": "🟢 alive", "reversed": "🔴 reversed",
+                 "dead": "⚪ dead", "insufficient": "· n/a"}
+        lc_rows = [[s] + [marks.get((cells.get(y) or {}).get("category"), "—")
+                          for y in lc["years"]]
+                   for s, cells in sorted(lc["signals"].items())]
+        lc_tbl = ("\n\n## Lifecycle (per year)\n\n"
+                  + table(["Signal"] + list(lc["years"]), lc_rows)
+                  + "\n\n_Alive = IC>2% ∧ ≥55% positive dates ∧ |t|>2 within that "
+                    "year; reversed = IC<−2% ∧ |t|>2; dead = neither; n/a = too "
+                    "few dates to judge (U31). A signal decaying alive→dead is "
+                    "the pattern the pooled IC above hides._")
+
     cand = data.get("candidate_weights", {}) or {}
     kept = ", ".join(f"{k} {pct(v)}" for k, v in cand.items() if v and v > 0.001)
     val = data.get("validation", {}) or {}
@@ -566,7 +581,7 @@ def signal_lab_note(data: dict) -> str:
         "the next quarter's return, per rebalance date then averaged. Positive = predictive; "
         "negative = predicts backwards. Quintile spread = top-fifth minus bottom-fifth forward "
         f"return. Over {data.get('n_dates','?')} rebalances._\n\n"
-        f"## Per-signal predictive power\n\n{ic_tbl}\n\n"
+        f"## Per-signal predictive power\n\n{ic_tbl}{lc_tbl}\n\n"
         + (f"## Candidate re-weighting (drop the duds)\n\n"
            f"Keep **{kept}**, drop the rest. **Out-of-sample** (weights derived from in-sample "
            f"dates only, judged on held-out dates):\n\n{val_tbl}\n\n" if val_tbl else "")
