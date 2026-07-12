@@ -30,3 +30,6 @@ auto_trader/.paper_start_date
 auto_trader/.halt
 pre_trader_snapshot.txt
 logs/*.log.*
+
+# graphify knowledge-graph output (rebuildable local cache — never commit to the public repo)
+graphify-out/
