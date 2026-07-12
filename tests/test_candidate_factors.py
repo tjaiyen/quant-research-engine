@@ -78,6 +78,10 @@ def test_factor_signs_point_the_documented_way():
     assert candidate_factor_scores("X", at_high)["high_52w"] > 0.5
 
 
-def test_panel_flag_off_by_default():
+def test_panel_flag_state_pinned():
+    # Enabled deliberately 2026-07-12 (TJ) — candidates are measured in the
+    # panel/signal-lab but still never enter WEIGHT_MATRIX without the manual
+    # DSR/CPCV promotion gate. Flip this pin only with an equally deliberate
+    # decision.
     from screener.config import CANDIDATE_FACTORS_ENABLED
-    assert CANDIDATE_FACTORS_ENABLED is False
+    assert CANDIDATE_FACTORS_ENABLED is True
