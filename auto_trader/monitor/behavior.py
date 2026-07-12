@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import statistics
-from datetime import datetime
+from datetime import datetime, timezone
 
 from auto_trader.state.portfolio_db import get_connection
 
@@ -33,7 +33,14 @@ STOP_CHURN_DAYS = 7
 
 
 def _dt(iso: str) -> datetime:
-    return datetime.fromisoformat(str(iso).replace("Z", "+00:00").split("+")[0])
+    """Parse an ISO timestamp to a NAIVE UTC datetime.
+
+    Ledger rows carry +00:00 offsets today, but a future writer could emit a
+    local offset or a bare naive string — normalising through UTC keeps every
+    pair subtractable (mixed aware/naive raises TypeError).
+    """
+    d = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    return d.astimezone(timezone.utc).replace(tzinfo=None) if d.tzinfo else d
 
 
 def _fetch_fills() -> list[dict]:
