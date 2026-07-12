@@ -18,4 +18,7 @@ def _isolate_paper_state(tmp_path, monkeypatch):
     # DB_PATH defaults to the LIVE store/cockpit.sqlite — isolate it too
     # (mirrors tests/conftest.py; an upsert there is invisible to row counts).
     monkeypatch.setenv("DB_PATH", str(tmp_path / "test_cockpit.sqlite"))
+    # Force the mock broker — real Alpaca paper keys now exist in .env, and
+    # a test reaching get_client() must never talk to the live paper API.
+    monkeypatch.setenv("ALPACA_USE_MOCK", "true")
     yield

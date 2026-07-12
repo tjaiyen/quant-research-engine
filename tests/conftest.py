@@ -29,6 +29,10 @@ def _isolate_paper_state(tmp_path, monkeypatch):
     # the schema (empty-but-schema'd, like the old db/ decoy) so data-
     # conditional tests SKIP gracefully instead of crashing on missing tables.
     monkeypatch.setenv("DB_PATH", str(tmp_path / "test_cockpit.sqlite"))
+    # Force the mock broker: now that real Alpaca paper keys live in .env,
+    # any test reaching get_client() would otherwise talk to the LIVE paper
+    # API (found 2026-07-12 — a reconciler test hit the real account).
+    monkeypatch.setenv("ALPACA_USE_MOCK", "true")
     from utils.db import init_db
     init_db()
     yield

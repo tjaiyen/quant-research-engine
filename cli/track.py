@@ -210,6 +210,20 @@ def cmd_audit(args: argparse.Namespace) -> int:
     from auto_trader.monitor.reconciler import reconcile
 
     r = reconcile()
+    # Log the result as a RECON_* system event — the dashboard banner reads
+    # the LATEST such event, so a clean manual audit must clear a stale
+    # RECON_DRIFT the same way the daily monitor's reconcile does (found
+    # 2026-07-12: a clean `track audit` left the drift banner up for days).
+    try:
+        from auto_trader.state.portfolio_db import log_system_event
+        log_system_event(
+            "RECON_OK" if r["ok"] else "RECON_DRIFT",
+            f"{r['n_checks']} checks, {len(r['discrepancies'])} discrepancies",
+            {"discrepancies": r["discrepancies"], "notes": r["notes"],
+             "source": "track audit"},
+        )
+    except Exception as exc:
+        print(f"  (recon event not logged: {exc})", file=sys.stderr)
     print(f"Reconciliation: {r['n_checks']} checks · "
           f"{len(r['discrepancies'])} discrepancies · as of {r['as_of']}")
     for n in r["notes"]:
