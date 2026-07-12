@@ -31,18 +31,35 @@ def test_gate2_credentials_no_circular_imports(monkeypatch):
     """Gate 2: importing credentials must NOT pull in auto_trader.config."""
     import sys
 
-    # Drop cached imports so we can observe a fresh load.
-    for k in list(sys.modules):
-        if k.startswith("auto_trader."):
-            sys.modules.pop(k, None)
+    # Drop cached imports so we can observe a fresh load — but RESTORE the
+    # originals afterwards: leaving fresh module instances in sys.modules
+    # breaks any later test that monkeypatches a module object it imported
+    # at collection time (the tests/test_fleet.py order-dependency, 2026-07-11).
+    saved = {k: v for k, v in sys.modules.items() if k.startswith("auto_trader")}
+    for k in saved:
+        sys.modules.pop(k, None)
+    try:
+        monkeypatch.setenv("TRADING_MODE", "paper")
+        import auto_trader.credentials as creds  # noqa: F401
 
-    monkeypatch.setenv("TRADING_MODE", "paper")
-    import auto_trader.credentials as creds  # noqa: F401
-
-    assert "auto_trader.config" not in sys.modules, (
-        "H2 violation: credentials imported config (circular dep risk)"
-    )
-    assert creds.get_trading_mode() == "paper"
+        assert "auto_trader.config" not in sys.modules, (
+            "H2 violation: credentials imported config (circular dep risk)"
+        )
+        assert creds.get_trading_mode() == "paper"
+    finally:
+        for k in list(sys.modules):
+            if k.startswith("auto_trader"):
+                sys.modules.pop(k, None)
+        sys.modules.update(saved)
+        # Re-bind parent-package ATTRIBUTES too: pytest's string monkeypatch
+        # (`setattr("auto_trader.credentials.X", …)`) resolves via getattr on
+        # the package, not sys.modules — a stale attribute left pointing at
+        # the fresh module made later halt-flag tests patch a dead object
+        # and WRITE THE REAL auto_trader/.halt (2026-07-12).
+        for k, m in saved.items():
+            parent, _, child = k.rpartition(".")
+            if parent and parent in sys.modules:
+                setattr(sys.modules[parent], child, m)
 
 
 def test_paper_start_path_resolves():

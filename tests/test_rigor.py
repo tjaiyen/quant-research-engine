@@ -80,6 +80,60 @@ def test_cpcv_distribution_shape():
     assert dist["folds"] and all("excess" in f for f in dist["folds"])
 
 
+# ── U29 permutation max-DD + bootstrap Sharpe CI ─────────────────────────────
+
+def test_permutation_deterministic_and_bounded():
+    from screener.rigor.resample import permutation_test
+    rets = [0.03, -0.02, 0.04, -0.05, 0.02, 0.01, -0.03, 0.05, 0.02, -0.01]
+    a = permutation_test(rets, n_sims=200, seed=7)
+    b = permutation_test(rets, n_sims=200, seed=7)
+    assert a == b                                      # seeded → reproducible
+    assert 0.0 <= a["p_value_max_dd"] <= 1.0
+    assert a["observed_max_dd"] <= 0.0
+    assert a["n_obs"] == len(rets)
+
+
+def test_permutation_monotone_winner_has_benign_path():
+    # All-positive returns → zero drawdown in EVERY ordering, so every
+    # permutation draws down "at least as badly" (equally) → p = 1.0.
+    from screener.rigor.resample import permutation_test
+    out = permutation_test([0.02, 0.03, 0.01, 0.04, 0.02, 0.03], n_sims=100)
+    assert out["observed_max_dd"] == 0.0
+    assert out["p_value_max_dd"] == 1.0
+
+
+def test_permutation_front_loaded_crash_is_flagged():
+    # Losses clustered up front → realised DD worse than most reshuffles → small p.
+    from screener.rigor.resample import permutation_test
+    rets = [-0.10, -0.10, -0.10] + [0.02] * 12
+    out = permutation_test(rets, n_sims=500, seed=3)
+    assert out["p_value_max_dd"] < 0.5                 # not benign
+    # and the observed DD equals the compounded front-loss (≈ -27.1%)
+    assert abs(out["observed_max_dd"] - (0.9 ** 3 - 1)) < 1e-9
+
+
+def test_permutation_too_few_segments_errors():
+    from screener.rigor.resample import permutation_test
+    out = permutation_test([0.01, 0.02])
+    assert "error" in out and "p_value_max_dd" not in out
+
+
+def test_bootstrap_ci_contains_observed_and_is_deterministic():
+    from screener.rigor.resample import bootstrap_sharpe_ci
+    rets = [0.04, -0.01, 0.03, 0.02, -0.02, 0.05, 0.01, 0.03, -0.01, 0.02]
+    a = bootstrap_sharpe_ci(rets, n_boot=300, seed=11)
+    b = bootstrap_sharpe_ci(rets, n_boot=300, seed=11)
+    assert a == b
+    assert a["ci_lower"] <= a["observed_sharpe"] <= a["ci_upper"]
+    assert 0.0 <= a["prob_positive"] <= 1.0
+
+
+def test_bootstrap_degenerate_inputs_error():
+    from screener.rigor.resample import bootstrap_sharpe_ci
+    assert "error" in bootstrap_sharpe_ci([0.01, 0.02, 0.03])          # too few
+    assert "error" in bootstrap_sharpe_ci([0.01] * 10)                 # zero var
+
+
 # ── U28 multiple-testing-corrected signal significance ───────────────────────
 
 def test_signal_significance_flag_uses_corrected_threshold():

@@ -178,12 +178,52 @@ def cmd_score(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_behavior(args: argparse.Namespace) -> int:
+    """U30: engine trade-quality mirror over the fill ledger → Behavior.md."""
+    _preflight()
+    from datetime import datetime, timezone
+
+    from auto_trader.monitor.behavior import analyze_behavior
+    from render import notes
+    from render.markdown import atomic_write, tracker_dir
+
+    data = analyze_behavior()
+    data["as_of"] = datetime.now(timezone.utc).isoformat()
+    atomic_write(tracker_dir() / "Behavior.md", notes.behavior_note(data))
+    print(f"Behavior written → {tracker_dir()}/Behavior.md")
+    n = data.get("n_roundtrips", 0)
+    if n:
+        disp = data.get("disposition") or {}
+        print(f"  {n} closed roundtrips ({data.get('confidence')} confidence) · "
+              f"win rate {data.get('win_rate', 0):.0%} · "
+              f"median hold {data.get('median_hold_days', 0):.1f}d"
+              + (f" · disposition ratio {disp['ratio']:.2f}"
+                 if disp.get("ratio") else ""))
+    else:
+        print(f"  no closed roundtrips yet ({data.get('n_open_positions', 0)} open)")
+    return 0
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Phase 29: on-demand accounting reconciliation. Exit 1 on drift."""
     _preflight()
     from auto_trader.monitor.reconciler import reconcile
 
     r = reconcile()
+    # Log the result as a RECON_* system event — the dashboard banner reads
+    # the LATEST such event, so a clean manual audit must clear a stale
+    # RECON_DRIFT the same way the daily monitor's reconcile does (found
+    # 2026-07-12: a clean `track audit` left the drift banner up for days).
+    try:
+        from auto_trader.state.portfolio_db import log_system_event
+        log_system_event(
+            "RECON_OK" if r["ok"] else "RECON_DRIFT",
+            f"{r['n_checks']} checks, {len(r['discrepancies'])} discrepancies",
+            {"discrepancies": r["discrepancies"], "notes": r["notes"],
+             "source": "track audit"},
+        )
+    except Exception as exc:
+        print(f"  (recon event not logged: {exc})", file=sys.stderr)
     print(f"Reconciliation: {r['n_checks']} checks · "
           f"{len(r['discrepancies'])} discrepancies · as of {r['as_of']}")
     for n in r["notes"]:
@@ -274,6 +314,14 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     data = {"as_of": datetime.now(timezone.utc).isoformat(),
             "walk_forward": wf, "ic": ic, "regime": rg}
     atomic_write(tracker_dir() / "Backtest.md", notes.backtest_note(data))
+    from utils.run_card import write_run_card
+    write_run_card("backtest",
+                   {"windows": args.windows, "samples": args.samples,
+                    "max_per_sector": args.max_per_sector,
+                    "max_tickers": args.max_tickers},
+                   metrics={"mean_lift": wf.get("mean_lift"),
+                            "win_rate": wf.get("win_rate"),
+                            "n_windows": wf.get("n_windows")})
     print(f"\nBacktest written → {tracker_dir()}/Backtest.md")
     print(f"  walk-forward: {wf.get('n_windows')} windows, mean lift "
           f"{wf.get('mean_lift', 0):.4f}, win rate {wf.get('win_rate', 0):.0%}")
@@ -386,10 +434,12 @@ def cmd_signal_lab(args: argparse.Namespace) -> int:
            "spy_oos": spy - 1.0, "n_oos": n - n_is}
 
     from screener.config import WEIGHT_MATRIX_MODE
+    from screener.signal_lab.lifecycle import signal_lifecycle
     data = {"as_of": datetime.now(timezone.utc).isoformat(),
             "n_dates": analysis["n_dates"], "n_rows": analysis["n_rows"],
             "signals": analysis["signals"], "correlation": analysis["correlation"],
             "candidate_weights": recommend_weights(analysis), "validation": val,
+            "lifecycle": signal_lifecycle(panel),
             "mode": os.getenv("WEIGHT_MATRIX_MODE", WEIGHT_MATRIX_MODE)}
     atomic_write(tracker_dir() / "SignalLab.md", notes.signal_lab_note(data))
     try:
@@ -403,6 +453,14 @@ def cmd_signal_lab(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"  (signal-lab sidecar not written: {exc})", file=sys.stderr)
 
+    from utils.run_card import write_run_card
+    write_run_card("signal-lab",
+                   {"years": args.years, "rebalance": args.rebalance,
+                    "max_per_sector": args.max_per_sector,
+                    "rebuild": bool(args.rebuild)},
+                   metrics={s: {"ic": d["ic"], "verdict": d["verdict"]}
+                            for s, d in analysis["signals"].items()},
+                   validation=val)
     print("Per-signal predictive power (IC):")
     for s, d in sorted(analysis["signals"].items(), key=lambda kv: -(kv[1]["ic"] or -9)):
         print(f"  {s:12} IC {(d['ic'] or 0)*100:+5.1f}%   {d['verdict']}")
@@ -459,6 +517,15 @@ def cmd_tournament(args: argparse.Namespace) -> int:
         }))
     except Exception as exc:
         print(f"  (tournament sidecar not written: {exc})", file=sys.stderr)
+    from utils.run_card import write_run_card
+    write_run_card("tournament",
+                   {"years": args.years, "rebalance": args.rebalance,
+                    "max_per_sector": args.max_per_sector, "cost_bps": cost_bps,
+                    "rebuild": bool(args.rebuild)},
+                   metrics={"winner": attr.get("winner"),
+                            "beat_spy": attr.get("beat_spy"),
+                            "beat_random": attr.get("beat_random"),
+                            "n_segments": tour["n_segments"]})
     print(f"\n🏆 Winner: {attr.get('winner')}")
     print(attr.get("verdict", ""))
     print(f"→ {tracker_dir()}/Tournament.md")
@@ -541,8 +608,21 @@ def cmd_sim(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 1
 
+    if data.get("seg_returns"):
+        from screener.rigor.resample import bootstrap_sharpe_ci, permutation_test
+        data["validation"] = {
+            "permutation": permutation_test(data["seg_returns"]),
+            "bootstrap": bootstrap_sharpe_ci(data["seg_returns"]),
+        }
+
     _ = datetime.now(timezone.utc)
     atomic_write(tracker_dir() / "StrategyBacktest.md", notes.strategy_backtest_note(data))
+    from utils.run_card import write_run_card
+    write_run_card("sim",
+                   {"years": args.years, "rebalance": args.rebalance,
+                    "max_per_sector": args.max_per_sector},
+                   metrics=data.get("metrics"),
+                   validation=data.get("validation"))
     m = data.get("metrics", {})
     print(f"\nStrategy backtest written → {tracker_dir()}/StrategyBacktest.md")
     if data.get("equity_curve"):
@@ -584,6 +664,15 @@ def cmd_status(args: argparse.Namespace) -> int:
               f"unrealized {money(latest.get('unrealized_pnl'))}")
     except Exception as exc:
         print(f"Paper:      (ledger unavailable: {exc})")
+
+    try:
+        from auto_trader.credentials import read_halt
+        h = read_halt()
+        if h:
+            print(f"⛔ HALTED   since {h.get('tripped_at', '?')} "
+                  f"by {h.get('by', '?')}: {h.get('reason') or '(no reason)'}")
+    except Exception:
+        pass
     return 0
 
 
@@ -714,6 +803,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     scp = sub.add_parser("score", help="grade past picks vs actual returns (Scorecard.md)")
     scp.set_defaults(func=cmd_score)
+
+    bh = sub.add_parser("behavior", help="engine trade-quality mirror over the "
+                        "fill ledger (Behavior.md)")
+    bh.set_defaults(func=cmd_behavior)
 
     rv = sub.add_parser("review", help="weekly-review slide deck (Review.md; Slides Extended)")
     rv.set_defaults(func=cmd_review)

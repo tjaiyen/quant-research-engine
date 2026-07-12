@@ -164,12 +164,38 @@ def is_halted() -> bool:
     return HALT_FLAG_PATH.exists()
 
 
-def set_halt(reason: str = "") -> None:
+def set_halt(reason: str = "", by: str = "code") -> None:
+    """Trip the halt flag atomically (tmp + os.replace — a crash mid-write
+    must never leave a truncated flag; existence alone is the signal, but the
+    JSON payload attributes who/why/when). Pattern after Vibe-Trading halt.py.
+    """
+    import json as _json
+
     HALT_FLAG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    body = f"HALTED at {datetime.now().isoformat()}"
-    if reason:
-        body += f"\nReason: {reason}"
-    HALT_FLAG_PATH.write_text(body)
+    payload = _json.dumps({"tripped_at": datetime.now().isoformat(),
+                           "by": by, "reason": reason or None})
+    tmp = HALT_FLAG_PATH.parent / (HALT_FLAG_PATH.name + ".tmp")
+    tmp.write_text(payload)
+    os.replace(tmp, HALT_FLAG_PATH)
+
+
+def read_halt() -> Optional[dict]:
+    """The halt payload, or None when not halted. A manually `touch`ed or
+    legacy plain-text flag still halts (existence is the contract) — it just
+    reads back as {'reason': <raw text or None>}."""
+    if not HALT_FLAG_PATH.exists():
+        return None
+    import json as _json
+
+    try:
+        raw = HALT_FLAG_PATH.read_text()
+    except Exception:
+        return {"reason": None}
+    try:
+        data = _json.loads(raw)
+        return data if isinstance(data, dict) else {"reason": str(data)}
+    except Exception:
+        return {"reason": raw.strip() or None}
 
 
 def clear_halt() -> None:
@@ -188,5 +214,6 @@ __all__ = [
     "write_paper_start",
     "is_halted",
     "set_halt",
+    "read_halt",
     "clear_halt",
 ]

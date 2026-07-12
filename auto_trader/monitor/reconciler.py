@@ -28,7 +28,12 @@ from auto_trader.state.portfolio_db import (
 
 logger = logging.getLogger(__name__)
 
-TOLERANCE = 0.01          # dollars — absorbs float dust, flags real drift
+# Dollars — absorbs float dust AND per-fill cent rounding, flags real drift.
+# Alpaca rounds each fill's cash impact to the cent, so a live paper book
+# accumulates a penny-scale cash residue vs the exact ledger replay (observed
+# 2026-07-12: ~$0.01 over the ~100 fills since cutover). $0.02+ on a $10k
+# book is still flagged immediately.
+TOLERANCE = 0.02
 STARTING_CAPITAL = 10_000.0
 _EPS_SHARES = 1e-6        # share-count tolerance (fractional-share dust)
 

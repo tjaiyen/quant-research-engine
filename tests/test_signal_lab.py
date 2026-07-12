@@ -66,3 +66,61 @@ def test_weight_matrix_mode_flag(monkeypatch):
     assert cand["monte_carlo"] == 0.0 and cand["arima"] > 0.5
     assert base != cand
     assert abs(sum(cand.values()) - 1.0) < 1e-9
+
+
+# ── U31 lifecycle (alive / reversed / dead per year) ─────────────────────────
+
+def _decay_panel():
+    """arima predicts strongly in 2023 and is pure noise in 2024."""
+    import random
+    rng = random.Random(7)
+    tickers = [f"T{i}" for i in range(12)]
+    segs, rows = [], []
+    for year, predictive in (("2023", True), ("2024", False)):
+        for k in range(8):
+            d0 = f"{year}-{k+1:02d}-01"
+            segs.append({"d0": d0, "d1": f"{year}-{k+2:02d}-01",
+                         "regime": "bull", "regime_conf": 1.0, "spy_return": 0.01})
+            for j, t in enumerate(tickers):
+                a = (j + 1) / len(tickers)
+                fwd = ((a - 0.5) * 0.08 if predictive
+                       else rng.uniform(-0.04, 0.04))
+                rows.append({"d0": d0, "ticker": t, "sector": "Tech",
+                             "signals": {"arima": a}, "composite": a,
+                             "passed_veto": True, "fwd_return": fwd})
+    return {"rebalance": "month", "segments": segs, "rows": rows}
+
+
+def test_lifecycle_flags_mid_history_decay():
+    from screener.signal_lab.lifecycle import signal_lifecycle
+    lc = signal_lifecycle(_decay_panel())
+    assert lc["years"] == ["2023", "2024"]
+    arima = lc["signals"]["arima"]
+    assert arima["2023"]["category"] == "alive"       # perfect predictor
+    assert arima["2024"]["category"] in ("dead", "reversed")  # noise year
+    assert arima["2023"]["n"] == 8
+
+
+def test_lifecycle_insufficient_bucket_never_forced():
+    from screener.signal_lab.lifecycle import categorise
+    out = categorise([0.5, 0.5])                      # 2 < MIN_DATES
+    assert out["category"] == "insufficient" and out["ic"] is None
+    # a zero-variance series is maximal consistency, not absent evidence:
+    # consistently +3% IC clears alive; consistently -3% is reversed
+    assert categorise([0.03, 0.03, 0.03, 0.03])["category"] == "alive"
+    assert categorise([-0.03, -0.03, -0.03, -0.03])["category"] == "reversed"
+    # dead-zone mean with zero variance stays dead
+    assert categorise([0.01, 0.01, 0.01, 0.01])["category"] == "dead"
+
+
+def test_note_renders_lifecycle_table():
+    panel = _decay_panel()
+    from screener.signal_lab.lifecycle import signal_lifecycle
+    a = analyze_signals(panel)
+    data = {"as_of": "x", "n_dates": a["n_dates"], "n_rows": a["n_rows"],
+            "signals": a["signals"], "correlation": a["correlation"],
+            "candidate_weights": recommend_weights(a),
+            "lifecycle": signal_lifecycle(panel), "validation": {}}
+    md = notes.signal_lab_note(data)
+    assert "Lifecycle (per year)" in md
+    assert "🟢 alive" in md

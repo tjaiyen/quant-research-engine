@@ -216,3 +216,27 @@ def test_build_all_prunes_closed_positions(tmp_path, monkeypatch):
     from render.build import build_all
     build_all()
     assert not (pos_dir / "OLD.md").exists()  # pruned
+
+
+def test_behavior_note_renders_and_labels_confidence():
+    from render import notes
+    from auto_trader.monitor.behavior import analyze_behavior
+    from auto_trader.state.portfolio_db import initialize_db, log_trade
+
+    initialize_db()
+    log_trade({"ticker": "AAA", "action": "BUY", "shares": 10, "price": 100.0,
+               "total_value": 1000.0, "executed_at": "2026-01-05T15:00:00"})
+    log_trade({"ticker": "AAA", "action": "SELL", "shares": 10, "price": 110.0,
+               "total_value": 1100.0, "cost_basis": 100.0,
+               "executed_at": "2026-01-25T15:00:00",
+               "trigger_reason": "decay_exit"})
+    data = analyze_behavior()
+    data["as_of"] = "2026-07-11T00:00:00+00:00"
+    md = notes.behavior_note(data)
+    assert "type: tracker-behavior" in md
+    assert "closed roundtrips" in md          # sample-size label, never silent
+    assert "decay_exit" in md                 # exit-reason breakdown present
+
+    # And the empty-ledger shape renders too.
+    empty = notes.behavior_note({"n_roundtrips": 0, "as_of": "2026-07-11"})
+    assert "No closed roundtrips yet" in empty

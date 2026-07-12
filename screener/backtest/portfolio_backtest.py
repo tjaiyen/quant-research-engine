@@ -176,6 +176,7 @@ def run_portfolio_backtest(years: int = 3, rebalance: str = "quarter",
     base.update({
         "n_rebalances": len(seg_rets),
         "avg_picks": float(np.mean(n_picks)) if n_picks else 0.0,
+        "seg_returns": [float(r) for r in seg_rets],
         "equity_curve": curve,
         "metrics": {
             "total_return": total,

@@ -37,15 +37,30 @@ def test_gate5_live_mode_blocked_without_paper_duration(monkeypatch, tmp_path):
     )
     monkeypatch.setenv("REQUIRE_PAPER_BEFORE_LIVE", "true")
 
-    # Force a fresh import so the env vars are picked up
-    for k in list(sys.modules):
-        if k.startswith("auto_trader.credentials"):
-            sys.modules.pop(k, None)
+    # Force a fresh import so the env vars are picked up — restore the
+    # original module afterwards (same identity-preservation rule as
+    # test_config.test_gate2; stale module objects break later monkeypatches).
+    saved = {k: v for k, v in sys.modules.items()
+             if k.startswith("auto_trader.credentials")}
+    for k in saved:
+        sys.modules.pop(k, None)
+    try:
+        from auto_trader.credentials import get_alpaca_credentials
 
-    from auto_trader.credentials import get_alpaca_credentials
-
-    with pytest.raises(RuntimeError, match="LIVE TRADING BLOCKED"):
-        get_alpaca_credentials()
+        with pytest.raises(RuntimeError, match="LIVE TRADING BLOCKED"):
+            get_alpaca_credentials()
+    finally:
+        for k in list(sys.modules):
+            if k.startswith("auto_trader.credentials"):
+                sys.modules.pop(k, None)
+        sys.modules.update(saved)
+        # Re-bind the parent-package attribute (see test_config.test_gate2):
+        # string monkeypatches resolve via getattr on the package, so a stale
+        # attribute would send later halt-flag writes to the REAL flag path.
+        for k, m in saved.items():
+            parent, _, child = k.rpartition(".")
+            if parent and parent in sys.modules:
+                setattr(sys.modules[parent], child, m)
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +130,32 @@ def test_gate15_emergency_stop_halt_set_synchronously(monkeypatch, tmp_path):
     assert is_halted()
     clear_halt()
     assert not is_halted()
+
+
+def test_gate15b_halt_payload_json_and_legacy_compat(monkeypatch, tmp_path):
+    """U34 polish: set_halt writes atomic JSON attribution; a manually
+    touched or legacy plain-text flag still halts and still reads back."""
+    halt_path = tmp_path / ".halt"
+    monkeypatch.setattr("auto_trader.credentials.HALT_FLAG_PATH", halt_path)
+    from auto_trader.credentials import (clear_halt, is_halted, read_halt,
+                                         set_halt)
+
+    assert read_halt() is None
+    set_halt("drawdown breach", by="test")
+    assert is_halted()
+    h = read_halt()
+    assert h["by"] == "test" and h["reason"] == "drawdown breach"
+    assert h["tripped_at"]
+    assert not (tmp_path / ".halt.tmp").exists()      # tmp cleaned by replace
+    clear_halt()
+    assert not is_halted()
+
+    # legacy / manual flag: existence is the contract
+    halt_path.write_text("HALTED at yesterday")
+    assert is_halted()
+    assert read_halt()["reason"] == "HALTED at yesterday"
+    halt_path.write_text("")                           # bare `touch`
+    assert read_halt() == {"reason": None}
 
 
 def test_gate15_emergency_stop_halts_before_cancel(monkeypatch, tmp_path):

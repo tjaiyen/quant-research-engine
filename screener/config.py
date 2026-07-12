@@ -113,6 +113,14 @@ WEIGHT_MATRIX_MODE: str = "candidate"
 # variants; this nets them out uniformly. Overridable via `--costs-bps`.
 TOURNAMENT_COST_BPS: float = 20.0
 
+# U33: add the 12 curated candidate factors (screener/signals/candidate_factors)
+# to the tournament panel as measured-only columns for signal-lab IC/lifecycle
+# judging. Enabling widens the Bonferroni family (raises the significance bar
+# for the live 5 too — deliberate) and re-keys the panel cache (one slow
+# rebuild). Enabled 2026-07-12 (TJ) to start accumulating factor evidence;
+# candidates still NEVER enter WEIGHT_MATRIX without the manual DSR/CPCV gate.
+CANDIDATE_FACTORS_ENABLED: bool = True
+
 # ── Regime-Adjusted Veto Thresholds ──────────────────────────────────────────
 VETO_THRESHOLDS: dict[str, dict[str, float]] = {
     "bull":     {"garch_vol": 0.045, "mc_loss_prob": 0.30},
