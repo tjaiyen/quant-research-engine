@@ -82,10 +82,13 @@ def _quintile_spread(rows_by_date: dict, sig: str) -> float | None:
 def _verdict(ic: float | None) -> str:
     if ic is None:
         return "no data"
-    if ic < -0.03:
-        return "DROP / FLIP — predicts backwards"
     if abs(ic) < 0.02:
         return "DROP — no edge (~0 IC)"
+    # Any meaningfully negative IC predicts backwards — the old `< -0.03`
+    # gate let ICs in (-0.03, -0.02] fall through to "weak keep" (observed
+    # 2026-07-12: garch -2.5% labelled weak keep).
+    if ic < 0:
+        return "DROP / FLIP — predicts backwards"
     if ic < 0.05:
         return "weak keep — small edge"
     return "KEEP — real edge"

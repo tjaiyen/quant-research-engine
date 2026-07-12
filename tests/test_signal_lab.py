@@ -124,3 +124,14 @@ def test_note_renders_lifecycle_table():
     md = notes.signal_lab_note(data)
     assert "Lifecycle (per year)" in md
     assert "🟢 alive" in md
+
+
+def test_verdict_negative_band_never_weak_keep():
+    # ICs in (-0.03, -0.02] predicted backwards but read "weak keep" before
+    # the 2026-07-12 fix; pin the whole negative range.
+    from screener.signal_lab.lab import _verdict
+    assert "backwards" in _verdict(-0.025)
+    assert "backwards" in _verdict(-0.05)
+    assert _verdict(-0.01).startswith("DROP — no edge")
+    assert _verdict(0.03) == "weak keep — small edge"
+    assert _verdict(0.06) == "KEEP — real edge"

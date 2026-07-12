@@ -151,14 +151,17 @@ def build_signal_panel(years: int = 3, rebalance: str = "quarter",
         logger.info("panel: %s scored %d rows", d0.date(),
                     sum(1 for r in panel["rows"] if r["d0"] == str(d0.date())))
 
-    if use_cache:
-        try:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(json.dumps(panel))
-            logger.info("tournament panel cached → %s (%d rows)", cache_path,
-                        len(panel["rows"]))
-        except Exception as exc:
-            logger.warning("panel cache write failed: %s", exc)
+    # ALWAYS cache the freshly built panel — `use_cache` governs the READ.
+    # The old `if use_cache:` guard meant `--rebuild` (use_cache=False) threw
+    # a 15-25 min build away, and the very next run rebuilt from scratch
+    # (observed 2026-07-12).
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(panel))
+        logger.info("tournament panel cached → %s (%d rows)", cache_path,
+                    len(panel["rows"]))
+    except Exception as exc:
+        logger.warning("panel cache write failed: %s", exc)
     return panel
 
 
