@@ -433,3 +433,18 @@ def test_equity_chart_interactivity_hooks_present():
     out = html.dashboard_html(_sample_v2())
     assert 'id="eq-data"' in out and 'id="eq-hit"' in out and 'id="eq-xh"' in out
     assert "qt_series" in out                       # legend toggle persistence
+
+
+def test_size_guard_full_fixture():
+    # No external assets means size only grows via markup — keep the full-data
+    # render under 400 KB so a regression (accidental base64, runaway rows)
+    # gets caught here instead of in the vault.
+    out = html.dashboard_html(_sample_v2())
+    assert len(out.encode()) < 400_000, f"dashboard grew to {len(out.encode())} bytes"
+
+
+def test_print_and_countdown_present():
+    out = html.dashboard_html(_sample_v2())
+    assert "@media print" in out and 'id="qt-count"' in out
+    # pinned refresh strings must survive the countdown addition
+    assert "Auto-refreshes every 15 min" in out and "15*60*1000" in out
