@@ -452,11 +452,14 @@ def cmd_signal_lab(args: argparse.Namespace) -> int:
             "candidate_weights": data["candidate_weights"], "validation": val,
             # U31 lifecycle for the dashboard's per-year dots. t can be ±inf
             # (zero-variance IC) — strip non-JSON-safe floats for strict JSON.
+            # defensive .get(): a lifecycle-shape regression must at worst
+            # drop the dots, never the whole sidecar (the outer except would
+            # silently swallow a KeyError and stale the Signal-Lab card)
             "lifecycle": {
-                "years": data["lifecycle"]["years"],
+                "years": data["lifecycle"].get("years", []),
                 "signals": {s: {y: {"category": c.get("category")}
                                 for y, c in cells.items()}
-                            for s, cells in data["lifecycle"]["signals"].items()},
+                            for s, cells in data["lifecycle"].get("signals", {}).items()},
             }}))
     except Exception as exc:
         print(f"  (signal-lab sidecar not written: {exc})", file=sys.stderr)

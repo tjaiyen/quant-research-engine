@@ -593,7 +593,7 @@ def _behavior_section(b: dict | None) -> str:
     stats.append(("stop_churn", str(len(churn)),
                   "re-entries after stops", "warn" if churn else "pos"))
     cells = "".join(
-        f'<div class="stat"><div class="stat-v {tone}">{v}</div>'
+        f'<div class="stat"><div class="stat-v {tone}">{_esc(v)}</div>'
         f'<div class="stat-l"><span class="term" data-term="{_esc(k)}">'
         f'{_esc(_gloss.GLOSSARY.get(k, {}).get("plain", k))}</span> · {_esc(note)}</div></div>'
         for k, v, note, tone in stats)
@@ -1417,7 +1417,9 @@ _PAGE_JS = r"""(function(){
       var tw=etip.offsetWidth, left=ev.clientX+14;
       if(left+tw>innerWidth-8) left=ev.clientX-tw-14;
       etip.style.left=Math.max(8,left)+'px';
-      etip.style.top=Math.max(8,ev.clientY-12)+'px';
+      var top=Math.max(8,ev.clientY-12);
+      top=Math.min(top, innerHeight-etip.offsetHeight-8);
+      etip.style.top=top+'px';
     }
     function hide(){ etip.style.opacity='0'; xh.setAttribute('opacity','0'); }
     hit.addEventListener('mousemove',show);
