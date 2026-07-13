@@ -449,7 +449,15 @@ def cmd_signal_lab(args: argparse.Namespace) -> int:
             "as_of": data["as_of"],
             "signals": {s: {"ic": d["ic"], "verdict": d["verdict"]}
                         for s, d in analysis["signals"].items()},
-            "candidate_weights": data["candidate_weights"], "validation": val}))
+            "candidate_weights": data["candidate_weights"], "validation": val,
+            # U31 lifecycle for the dashboard's per-year dots. t can be ±inf
+            # (zero-variance IC) — strip non-JSON-safe floats for strict JSON.
+            "lifecycle": {
+                "years": data["lifecycle"]["years"],
+                "signals": {s: {y: {"category": c.get("category")}
+                                for y, c in cells.items()}
+                            for s, cells in data["lifecycle"]["signals"].items()},
+            }}))
     except Exception as exc:
         print(f"  (signal-lab sidecar not written: {exc})", file=sys.stderr)
 

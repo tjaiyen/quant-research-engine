@@ -450,6 +450,15 @@ def _verdict_section(data: dict) -> str:
         sig_clause = (f' Of the {total_sig} {_dterm("ic", "signals")} measured, '
                       f'<b class="{"pos" if healthy > total_sig / 2 else "warn"}">{healthy} '
                       f'predict forwards</b> and the rest predict backwards.')
+        # When a CANDIDATE factor tops the whole board, say so — that is the
+        # decay-vs-discovery story the lab exists to surface.
+        best_key = max(sl, key=lambda k: (sl[k].get("ic") or -9), default=None)
+        if best_key and best_key not in _SIGNALS and (sl[best_key].get("ic") or 0) > 0.05:
+            bplain = _gloss.GLOSSARY.get(best_key, {}).get("plain", best_key)
+            sig_clause += (f' The strongest signal right now is '
+                           f'<b class="pos"><span class="term" data-term="{_esc(best_key)}">'
+                           f'{_esc(bplain)}</span></b> ({pct(sl[best_key].get("ic"))} IC) — '
+                           f'a candidate factor, measured but not yet trading.')
     snaps_clause = (f' With only <b>{sm.get("n", 0)} snapshots</b> logged, treat everything '
                     f'below as early and unproven.' if sm.get("n", 99) < 8 else "")
 
@@ -517,6 +526,132 @@ def _recon_banner(recon: dict) -> str:
             f'<span>— the {_dterm("reconciliation", "trade-ledger replay")} '
             f'disagrees with: <b>{fields}</b> ({at}) — run '
             f'<code>./track audit</code>.</span></div>')
+
+
+def _status_strip(lr: dict, recon: dict) -> str:
+    """One slim chip row when EVERYTHING is healthy; full banners otherwise.
+
+    Two permanent full-width green banners trained the eye to skip banners —
+    healthy state now whispers, failure still shouts (the failure/stale paths
+    render the exact same banners as before).
+    """
+    auto_ok = bool(lr) and lr.get("status") != "fail" and not lr.get("stale")
+    recon_ok = bool(recon) and bool(recon.get("ok"))
+    if (lr and not auto_ok) or (recon and not recon_ok):
+        return _auto_banner(lr) + _recon_banner(recon)
+    chips = []
+    if lr:
+        chips.append(f'<span class="schip pos" data-term="automation_health">✓ automation '
+                     f'<b>{_esc(lr.get("job", ""))}</b></span>')
+    if recon:
+        chips.append(f'<span class="schip pos" data-term="reconciliation">✓ books reconciled '
+                     f'<b>{_esc(str(recon.get("at", "")).replace("T", " "))}</b></span>')
+    if not chips:
+        return ""
+    return f'<div class="statusbar">{"".join(chips)}</div>'
+
+
+def _behavior_section(b: dict | None) -> str:
+    """Engine trade-quality mirror (U30) — the Behavior.md card, on glass."""
+    if not b:
+        return ""
+    n = b.get("n_roundtrips", 0)
+    if not n:
+        return (f'<section class="card"><h3>Behavior mirror</h3>'
+                f'<p class="muted small">Does the engine hold losers, churn, or '
+                f'mis-time exits? Measured from its own closed trades.</p>'
+                f'<div class="empty">No closed round-trips yet — this card fills '
+                f'in as positions open <i>and</i> close. '
+                f'({b.get("n_open_positions", 0)} open now.)</div></section>')
+    conf = b.get("confidence", "low")
+    conf_note = {"low": f"only {n} closed round-trips — directional, not significant",
+                 "moderate": f"{n} closed round-trips — indicative",
+                 "ok": f"{n} closed round-trips"}.get(conf, "")
+    disp = b.get("disposition") or {}
+    ot = b.get("overtrading") or {}
+    att = b.get("attribution") or {}
+    stats = []
+    if disp:
+        tone = "neg" if disp.get("flagged") else "pos"
+        stats.append(("disposition", f'{num(disp.get("ratio"), 2)}×',
+                      "flagged — holding losers" if disp.get("flagged")
+                      else "not flagged", tone))
+    if ot.get("expected") is not None:
+        ex = ot.get("excess") or 0
+        stats.append(("overtrading", f'{ot.get("actual")} / {ot.get("expected")}',
+                      f'{ex} excess ({money(ot.get("excess_pnl"))})' if ex
+                      else "within budget", "warn" if ex else "pos"))
+    if att:
+        stats.append(("exit_timing", money((att.get("early_exit_shortfall") or 0)
+                                           + (att.get("late_exit_excess") or 0)),
+                      "left on the table", "warn"))
+    stats.append(("profit_factor", num(b.get("profit_factor"), 2)
+                  if b.get("profit_factor") is not None else "—",
+                  f'win rate {pct(b.get("win_rate"), 0)}',
+                  "pos" if (b.get("profit_factor") or 0) >= 1 else "warn"))
+    churn = b.get("stop_churn") or []
+    stats.append(("stop_churn", str(len(churn)),
+                  "re-entries after stops", "warn" if churn else "pos"))
+    cells = "".join(
+        f'<div class="stat"><div class="stat-v {tone}">{v}</div>'
+        f'<div class="stat-l"><span class="term" data-term="{_esc(k)}">'
+        f'{_esc(_gloss.GLOSSARY.get(k, {}).get("plain", k))}</span> · {_esc(note)}</div></div>'
+        for k, v, note, tone in stats)
+    return (f'<section class="card"><h3>Behavior mirror '
+            f'<span class="asof">{_esc(conf_note)}</span></h3>'
+            f'<p class="muted small">The engine grading its own realised trades: '
+            f'bias, churn and exit timing.</p>'
+            f'<div class="stats">{cells}</div></section>')
+
+
+def _rigor_section(run_cards: dict) -> str:
+    """Resampling validation from the latest sim run card (U29/U32)."""
+    card = (run_cards or {}).get("sim") or {}
+    val = card.get("validation") or {}
+    perm, boot = val.get("permutation") or {}, val.get("bootstrap") or {}
+    if not perm and not boot:
+        return ""
+    stats = []
+    if perm.get("p_value_max_dd") is not None:
+        p = perm["p_value_max_dd"]
+        stats.append(("permutation_test", f"p = {num(p, 2)}",
+                      "path benign vs own returns" if p > 0.05
+                      else "losses cluster worse than chance",
+                      "pos" if p > 0.05 else "warn"))
+    if boot.get("ci_lower") is not None:
+        stats.append(("bootstrap_ci",
+                      f'[{num(boot.get("ci_lower"), 2)}, {num(boot.get("ci_upper"), 2)}]',
+                      f'P(Sharpe>0) = {pct(boot.get("prob_positive"), 0)}',
+                      "pos" if (boot.get("prob_positive") or 0) > 0.8 else "warn"))
+    if not stats:
+        return ""
+    cells = "".join(
+        f'<div class="stat"><div class="stat-v {tone}">{_esc(v)}</div>'
+        f'<div class="stat-l"><span class="term" data-term="{_esc(k)}">'
+        f'{_esc(_gloss.GLOSSARY.get(k, {}).get("plain", k))}</span> · {_esc(note)}</div></div>'
+        for k, v, note, tone in stats)
+    return (f'<section class="card"><h3>Backtest validation '
+            f'{_asof(card.get("created_at"))}</h3>'
+            f'<p class="muted small">Resampling checks on the latest strategy '
+            f'backtest — complements {_dterm("dsr", "DSR")} and '
+            f'{_dterm("cpcv", "CPCV")}.</p><div class="stats two">{cells}</div></section>')
+
+
+def _provenance(run_cards: dict, as_of: str) -> str:
+    """One muted footer line tracing this page to the runs that produced it."""
+    if not run_cards:
+        return ""
+    bits = []
+    for cmd in ("sim", "signal-lab", "tournament", "backtest"):
+        card = run_cards.get(cmd)
+        if card:
+            head = str(card.get("git_head") or "")[:8] or "?"
+            ph = str(card.get("params_hash") or "")[:8]
+            bits.append(f'<b>{_esc(cmd)}</b> {_esc(head)}·{_esc(ph)}')
+    if not bits:
+        return ""
+    return (f'<span class="term" data-term="run_card">Run receipts</span>: '
+            + " · ".join(bits) + ". ")
 
 
 def _kpis(data: dict) -> str:
@@ -752,28 +887,76 @@ def _scorecard_section(sc: dict | None) -> str:
             f'<p class="muted">{_esc(intro)}</p>{table}{note}</section>')
 
 
+def _lifecycle_chips(cells: dict | None) -> str:
+    """Per-year alive/reversed/dead chips for one signal (U31), or ''."""
+    if not cells:
+        return ""
+    marks = {"alive": ("●", "pos"), "reversed": ("●", "neg"),
+             "dead": ("○", "muted2"), "insufficient": ("·", "muted2")}
+    chips = []
+    for year in sorted(cells):
+        cat = (cells[year] or {}).get("category", "insufficient")
+        glyph, tone = marks.get(cat, ("·", "muted2"))
+        chips.append(f'<span class="lc {tone}" title="{_esc(year)}: {_esc(cat)}">'
+                     f'{glyph}</span>')
+    return f'<span class="lcs">{"".join(chips)}</span>'
+
+
 def _signal_lab_section(sl: dict) -> str:
     sigs = sl.get("signals") or {}
     if not sigs:
         return ""
     val = sl.get("validation") or {}
+    lifecycle = (sl.get("lifecycle") or {}).get("signals") or {}
     strip = ""
     if val.get("candidate_oos") is not None:
-        strip = (f'<p class="muted">{_dterm("out_of_sample", "Fresh-data test")}: candidate '
+        n_oos = val.get("n_oos")
+        held = f" over {n_oos} held-out quarters" if n_oos else ""
+        strip = (f'<p class="muted">{_dterm("out_of_sample", "Fresh-data test")}{held}: candidate '
                  f'<b class="t2">{pct(val.get("candidate_oos"))}</b> · default '
                  f'{pct(val.get("default_oos"))} · SPY {pct(val.get("spy_oos"))}.</p>')
-    bar_rows = []
-    for s, d in sorted(sigs.items(), key=lambda kv: -(kv[1].get("ic") or -9)):
-        ic = d.get("ic")
-        plain = _gloss.GLOSSARY.get(s, {}).get("plain", s)
-        verdict = _esc(d.get("verdict", "")[:18])
-        col = "var(--pos)" if (ic or 0) >= 0 else "var(--neg)"
-        right = (f'{pct(ic)} · <span style="color:{col};font-family:var(--sans)">{verdict}</span>')
-        bar_rows.append((s, plain, ic, right))
+    weights = sl.get("candidate_weights") or {}
+    kept = {k: w for k, w in weights.items() if w and w > 0.001}
+    wchips = ""
+    if kept:
+        chips = "".join(
+            f'<span class="wchip"><span class="term" data-term="{_esc(k)}">'
+            f'{_esc(_gloss.GLOSSARY.get(k, {}).get("plain", k))}</span>'
+            f'<b class="mono">{w * 100:.0f}%</b></span>'
+            for k, w in sorted(kept.items(), key=lambda kv: -kv[1]))
+        wchips = (f'<p class="muted small" style="margin:8px 0 2px">Candidate re-weighting '
+                  f'keeps: {chips}</p>')
+
+    def bar_rows(keys):
+        rows = []
+        for s in sorted(keys, key=lambda k: -(sigs[k].get("ic") or -9)):
+            d = sigs[s]
+            ic = d.get("ic")
+            plain = _gloss.GLOSSARY.get(s, {}).get("plain", s)
+            verdict = _esc(d.get("verdict", "")[:18])
+            col = "var(--pos)" if (ic or 0) >= 0 else "var(--neg)"
+            right = (f'{pct(ic)} · <span style="color:{col};font-family:var(--sans)">'
+                     f'{verdict}</span>{_lifecycle_chips(lifecycle.get(s))}')
+            rows.append((s, plain, ic, right))
+        return rows
+
+    live = [s for s in sigs if s in _SIGNALS]
+    cands = [s for s in sigs if s not in _SIGNALS]
+    groups = ""
+    if live:
+        groups += (f'<div class="sp-hd" style="margin-top:10px">Live signals — these '
+                   f'drive the composite</div>{_diverging_bars(bar_rows(live))}')
+    if cands:
+        groups += (f'<div class="sp-hd" style="margin-top:14px">Candidates — measured '
+                   f'only, never trade without the {_dterm("dsr", "DSR")}/'
+                   f'{_dterm("cpcv", "CPCV")} promotion gate</div>'
+                   f'{_diverging_bars(bar_rows(cands))}')
     return (f'<section class="card"><h3><span class="term" data-term="ic">Signal Lab</span> '
-            f'{_asof(sl.get("as_of"))}</h3>{strip}'
+            f'{_asof(sl.get("as_of"))}</h3>{strip}{wchips}'
             f'<p class="muted small">Bars left of centre predict <b class="neg">backwards</b>; '
-            f'right predict <b class="pos">forwards</b>.</p>{_diverging_bars(bar_rows)}</section>')
+            f'right predict <b class="pos">forwards</b>. Year dots: '
+            f'<b class="pos">●</b> alive · <b class="neg">●</b> reversed · '
+            f'<span class="muted2">○</span> dead.</p>{groups}</section>')
 
 
 def _fleet_holdings_table(holdings: list[dict], names: dict | None = None) -> str:
@@ -1365,6 +1548,14 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .autobar.pos{background:var(--pos-dim);border:1px solid var(--pos-line);color:var(--pos);}
 .autobar.neg{background:var(--neg-dim);border:1px solid var(--neg-line);color:var(--neg);}
 .autobar.warn{background:var(--warn-dim);border:1px solid var(--warn);color:var(--warn);}
+/* status strip (healthy-state whisper; failures still use full banners) */
+.statusbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px;}
+.schip{display:inline-flex;align-items:center;gap:6px;font-size:12px;border-radius:999px;padding:4px 12px;background:var(--pos-dim);border:1px solid var(--pos-line);color:var(--pos);}
+.schip b{color:var(--text2);font-weight:500;}
+/* signal-lab lifecycle dots + weight chips */
+.lcs{margin-left:8px;letter-spacing:2px;font-size:10px;}
+.lc.pos{color:var(--pos);} .lc.neg{color:var(--neg);} .lc.muted2{color:var(--muted2);}
+.wchip{display:inline-flex;align-items:center;gap:5px;background:var(--inset);border:1px solid var(--border-soft);border-radius:999px;padding:2px 9px;margin:0 4px 2px 0;font-size:11.5px;}
 /* cards + zones */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow);}
 .card.scroll-x{overflow-x:auto;}
@@ -1519,9 +1710,12 @@ def dashboard_html(data: dict) -> str:
     fleet = _fleet_section(data.get("fleet") or [], names)
     sc = _scorecard_section(data.get("scorecard"))
     sl = _signal_lab_section(data.get("signal_lab") or {})
+    beh = _behavior_section(data.get("behavior"))
+    rig = _rigor_section(data.get("run_cards") or {})
     working_zone = ((_zone_header("working", "Is it working?") + fleet
-                     + f'<div class="grid2">{sc}{sl}</div>')
-                    if (fleet or sc or sl) else "")
+                     + f'<div class="grid2">{sc}{sl}</div>'
+                     + (f'<div class="grid2">{beh}{rig}</div>' if (beh or rig) else ""))
+                    if (fleet or sc or sl or beh or rig) else "")
     # zone: Under the hood — donut + vetoes, then health/sentiment/tournament/copilot
     donut = _sector_donut(sectors)
     vet = _vetoes_section(sectors, summary, names)
@@ -1564,8 +1758,7 @@ def dashboard_html(data: dict) -> str:
         f'<a href="#hud" data-jump="hud">Under the hood</a></nav>'
 
         f'{_verdict_section(data)}'
-        f'{_auto_banner(data.get("last_run") or {})}'
-        f'{_recon_banner(data.get("recon") or {})}'
+        f'{_status_strip(data.get("last_run") or {}, data.get("recon") or {})}'
 
         f'<section id="equity" class="card" style="scroll-margin-top:64px">'
         f'<div class="eq-hd"><div><h3>Strategy vs the market</h3>'
@@ -1581,7 +1774,8 @@ def dashboard_html(data: dict) -> str:
 
         f'{screen_zone}{working_zone}{hud_zone}'
 
-        f'<footer>Auto-generated by quant-tracker — regenerated each run. Paper money, research '
+        f'<footer>{_provenance(data.get("run_cards") or {}, as_of)}'
+        f'Auto-generated by quant-tracker — regenerated each run. Paper money, research '
         f'only — <b class="muted">not financial advice</b>. Auto-refreshes every 15 min '
         f'(keeps your scroll position); <b>Check for data</b> reloads now.</footer>'
     )

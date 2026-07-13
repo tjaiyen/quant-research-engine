@@ -172,6 +172,184 @@ GLOSSARY: dict[str, dict] = {
                   "one of the few effects that shows up across decades and markets.",
     },
 
+    # ── candidate factors (U33) — measured in the Signal Lab, never in the
+    #    live composite until they pass the DSR/CPCV promotion gate ──────────
+    "st_reversal": {
+        "plain": "Snap-back", "term": "short-term reversal",
+        "short": "Stocks that dropped hard over the past month tend to bounce; last month's losers score high.",
+        "long": "Short-term reversal is momentum's mirror at a one-month horizon: the market "
+                "over-reacts in the short run, so last month's losers tend to recover a little. "
+                "Scored from the trailing ~21-day return, inverted.",
+        "example": "Down 12% this month while nothing changed fundamentally → high snap-back score.",
+        "theory": "Jegadeesh (1990): one-month returns reverse — one of the oldest cross-sectional patterns.",
+    },
+    "mean_rev_20": {
+        "plain": "Rubber band", "term": "20-day mean reversion",
+        "short": "How stretched the price is below (or above) its own 20-day average — stretched-down tends to snap back.",
+        "long": "Measures how many standard deviations today's price sits from its 20-day mean "
+                "(a Bollinger-style z-score), inverted so stretched-below scores high.",
+        "example": "Price two standard deviations under its 20-day average → high rubber-band score.",
+        "theory": "Short-horizon prices oscillate around a local mean more than they trend.",
+    },
+    "close_position": {
+        "plain": "Buying pressure", "term": "intraday close position",
+        "short": "Where the price finishes inside each day's range — closing near the high means buyers won the day.",
+        "long": "Averages (close − low) / (high − low) over the last ~10 sessions. Days that close "
+                "near their high suggest accumulation; near the low, distribution.",
+        "example": "Ten straight closes in the top third of the daily range → high score.",
+        "theory": "Alpha101-family microstructure signal: who wins the close tends to persist briefly.",
+    },
+    "vol_price_corr": {
+        "plain": "Volume divergence", "term": "price-volume correlation",
+        "short": "A rally on shrinking volume is suspect; this scores stocks whose price and volume disagree.",
+        "long": "The 10-day correlation between price and volume, inverted — rising price with "
+                "falling volume (weak conviction) scores high on the fade side.",
+        "example": "Grinding higher while volume dries up → divergence flag.",
+        "theory": "Volume confirms moves; unconfirmed moves revert more often (alpha101 family).",
+    },
+    "amihud_illiq": {
+        "plain": "Illiquidity premium", "term": "Amihud illiquidity",
+        "short": "How much the price moves per dollar traded — harder-to-trade stocks historically pay a premium.",
+        "long": "Amihud (2002): average absolute daily return divided by dollar volume. Illiquid "
+                "names are riskier to trade, and the market has historically compensated that.",
+        "example": "A small-cap moving 1% on thin volume scores far higher than AAPL.",
+        "theory": "Liquidity is a priced risk factor — the classic Amihud measure.",
+    },
+    "overnight_gap": {
+        "plain": "Overnight drift", "term": "overnight gap",
+        "short": "The average open-vs-prior-close move — some stocks earn their return while the market is closed.",
+        "long": "Averages the overnight (close→open) return over ~21 days. Persistent overnight "
+                "strength has been documented as its own return stream.",
+        "example": "Keeps gapping up at the open → high overnight-drift score.",
+        "theory": "Lou, Polk & Skouras (2019): overnight and intraday returns are earned by different crowds.",
+    },
+    "high_52w": {
+        "plain": "Near the high", "term": "52-week-high proximity",
+        "short": "How close the price is to its one-year high — stocks near their high tend to keep pushing.",
+        "long": "Price divided by the trailing 252-day maximum. Investors anchor on the old high "
+                "and under-react to good news near it, so breakouts drift further.",
+        "example": "Trading at 98% of its yearly high → strong proximity score.",
+        "theory": "George & Hwang (2004): the 52-week high is a momentum anchor.",
+    },
+    "volume_trend": {
+        "plain": "Rising interest", "term": "volume trend",
+        "short": "Whether trading volume is picking up vs its 3-month norm — attention often precedes moves.",
+        "long": "The log-ratio of 21-day average volume to 63-day average volume: a crowd "
+                "arriving (or leaving) before price fully reacts.",
+        "example": "Volume running 40% above its quarterly norm → high score.",
+        "theory": "Volume shifts proxy information arrival ahead of price.",
+    },
+    "turnover_stab": {
+        "plain": "Steady volume", "term": "turnover stability",
+        "short": "How steady daily volume is — erratic volume often means noisy, news-driven trading.",
+        "long": "The coefficient of variation of 21-day volume, inverted: stable participation "
+                "scores high, spiky episodic volume scores low.",
+        "example": "Near-identical volume every day → high stability score.",
+        "theory": "Stable turnover names behave more predictably than headline-driven ones.",
+    },
+    "max_ret_21": {
+        "plain": "Lottery flag", "term": "MAX effect",
+        "short": "The single biggest up-day in the past month, inverted — lottery-like spikes usually give it back.",
+        "long": "Bali–Cakici–Whitelaw's MAX: stocks with an extreme recent up-day attract "
+                "lottery-seeking buyers and subsequently underperform. Scored inverted.",
+        "example": "One +15% day this month → low score (lottery-ish); no spikes → high.",
+        "theory": "Preference for lottery payoffs overprices spiky names (BCW 2011).",
+    },
+    "idio_vol": {
+        "plain": "Calm mover", "term": "idiosyncratic volatility",
+        "short": "Day-to-day choppiness over ~3 months, inverted — calm stocks have historically beaten wild ones.",
+        "long": "The standard deviation of daily returns over ~63 days, inverted. The famous "
+                "low-volatility anomaly: boring wins. (Total-volatility proxy — not "
+                "market-residualised.)",
+        "example": "A utility drifting ±0.5%/day outscores a meme stock swinging ±5%.",
+        "theory": "Ang et al. (2006): high-idiosyncratic-volatility stocks underperform.",
+    },
+    "range_vol": {
+        "plain": "Tight ranges", "term": "intraday range volatility",
+        "short": "How wide each day's high-low range runs, inverted — tight daily ranges mean orderly trading.",
+        "long": "A Parkinson-style estimate from daily high/low ranges over ~21 days, inverted "
+                "so tight, orderly names score high.",
+        "example": "Daily range ~1% of price → high score; 6% swings → low.",
+        "theory": "Range-based volatility is a sharper estimator than close-to-close.",
+    },
+    "lowvol": {
+        "plain": "Low volatility", "term": "low-vol factor",
+        "short": "Long-horizon price steadiness — the measured-only cousin of the calm-mover factor.",
+        "long": "Ranks stocks by trailing realised volatility, steadiest first. Measured in the "
+                "Signal Lab alongside momentum; not part of the live composite.",
+        "example": "A staples stock with the gentlest price path tops the low-vol ranking.",
+        "theory": "The low-volatility anomaly: risk-adjusted returns favour the quiet names.",
+    },
+
+    # ── behavior mirror (U30) ────────────────────────────────────────────────
+    "disposition": {
+        "plain": "Holding losers", "term": "disposition ratio",
+        "short": "How much longer losing trades are held vs winners. Above 1.5× = the classic mistake, flagged.",
+        "long": "The median holding time of losing round-trips divided by winners'. Selling "
+                "winners fast while nursing losers is the disposition effect — the most "
+                "documented trading bias. The engine watches itself for it.",
+        "example": "Losers held 20 days, winners 5 → ratio 4.0, flagged.",
+        "theory": "Shefrin & Statman (1985); Odean (1998): shown on real retail broker data.",
+    },
+    "overtrading": {
+        "plain": "Churn check", "term": "overtrading budget",
+        "short": "Compares actual trades to a budget implied by the typical holding period — excess churn usually costs money.",
+        "long": "Roughly one round-trip per 2× the median holding period is 'enough'. Trades "
+                "beyond that budget are counted and their P&L totalled — churn that likely "
+                "added noise, not signal.",
+        "example": "Budget says ~6 round-trips this quarter; the book did 13 → 7 excess.",
+        "theory": "Barber & Odean (2000): trading is hazardous to your wealth.",
+    },
+    "exit_timing": {
+        "plain": "Exit timing", "term": "exit-timing attribution",
+        "short": "P&L given up by selling winners too early or holding losers past the normal window.",
+        "long": "Uses the engine's own p25–p75 holding-day band as the reference: winners exited "
+                "below the band forfeit pro-rata upside; losers held past it accrue excess loss. "
+                "Both are totalled as counterfactual dollars.",
+        "example": "A winner sold on day 2 when the band starts at day 8 → early-exit shortfall.",
+    },
+    "stop_churn": {
+        "plain": "Stop-loss churn", "term": "stop-churn re-entry",
+        "short": "Re-buying a stock within days of being stopped out of it — usually paying the same lesson twice.",
+        "long": "Counts re-entries into a ticker within 7 days of a stop-loss exit. A stop that "
+                "immediately gets re-bought suggests the stop level and the conviction disagree.",
+        "example": "Stopped out Monday, re-bought Thursday → one churn event.",
+    },
+    "profit_factor": {
+        "plain": "Profit factor", "term": "profit factor",
+        "short": "Gross winnings divided by gross losses across closed trades — above 1.0 means the wins outweigh the losses.",
+        "long": "Sum of all winning round-trip P&L divided by the absolute sum of losing P&L. "
+                "A blunt but honest single number for whether the exits are earning their keep.",
+        "example": "$600 of wins against $400 of losses → profit factor 1.5.",
+    },
+
+    # ── resampling validation (U29) + provenance (U32) ──────────────────────
+    "permutation_test": {
+        "plain": "Shuffle test", "term": "permutation max-drawdown test",
+        "short": "Shuffles the order of the strategy's returns 1,000× — was the real drawdown path worse than chance?",
+        "long": "Re-orders the same per-rebalance returns many times and measures each shuffled "
+                "path's worst drawdown. A LOW p-value means the real sequence clustered its "
+                "losses worse than chance; a high one means the path was benign.",
+        "example": "p = 0.20 → 20% of shuffles drew down at least as badly — nothing unusual.",
+        "theory": "Order-invariance means only the PATH is testable this way — Sharpe never moves under a shuffle.",
+    },
+    "bootstrap_ci": {
+        "plain": "Resampled confidence", "term": "bootstrap Sharpe CI",
+        "short": "Resamples the returns 1,000× to show the plausible range of the true Sharpe ratio.",
+        "long": "Draws the same returns with replacement to build a distribution of Sharpe "
+                "estimates: the 95% interval and P(Sharpe>0) say how stable the headline "
+                "number really is with this little data.",
+        "example": "CI [−0.3, 3.2] with P(Sharpe>0) = 88% → promising but far from proven.",
+    },
+    "run_card": {
+        "plain": "Run receipt", "term": "run card",
+        "short": "A frozen receipt of each analytical run: the exact code version, parameters, and results.",
+        "long": "Every sim/backtest/tournament/signal-lab run writes a JSON card with the git "
+                "commit, a hash of its parameters, headline metrics and validation results — so "
+                "any number on this page can be traced to the exact run that produced it.",
+        "example": "sim run card: engine 3b8f615, params baf56800, Sharpe 0.8.",
+    },
+
     # ── veto / risk gates ───────────────────────────────────────────────────
     "veto": {
         "plain": "Safety veto", "term": "veto",

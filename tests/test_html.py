@@ -348,3 +348,88 @@ def test_equity_svg_survives_trailing_none_benchmark():
     snaps2 = [{"total_value": 10000, "benchmark_value": None},
               {"total_value": 10100, "benchmark_value": None}]
     assert "<svg" in html._svg_equity(snaps2)
+
+
+# ── U29-U34 dashboard surfacing (dashboard UI/UX upgrade) ────────────────────
+
+def _sample_v2():
+    """_sample() plus the new payloads: behavior, run cards, factor-bearing
+    signal lab with lifecycle — the runtime completeness gate must hold on a
+    render that carries CANDIDATE factors (keys arrive via data, not source)."""
+    d = _sample()
+    d["signal_lab"] = {
+        "as_of": "2026-07-12",
+        "signals": {"arima": {"ic": 0.003, "verdict": "DROP — no edge (~0 IC)"},
+                    "st_reversal": {"ic": 0.121, "verdict": "KEEP — real edge"},
+                    "mean_rev_20": {"ic": 0.072, "verdict": "KEEP — real edge"},
+                    "idio_vol": {"ic": -0.06, "verdict": "DROP / FLIP"}},
+        "candidate_weights": {"sharpe": 0.78, "arima": 0.22, "garch": 0.0},
+        "validation": {"candidate_oos": 0.157, "default_oos": 0.168,
+                       "spy_oos": 0.071, "n_oos": 3},
+        "lifecycle": {"years": ["2024", "2025"], "signals": {
+            "st_reversal": {"2024": {"category": "alive"},
+                            "2025": {"category": "dead"}}}},
+    }
+    d["behavior"] = {
+        "n_roundtrips": 6, "n_open_positions": 15, "confidence": "low",
+        "win_rate": 0.5, "total_pnl": -285.0, "profit_factor": 0.53,
+        "disposition": {"ratio": 4.0, "flagged": True,
+                        "median_hold_winners": 5.0, "median_hold_losers": 20.0},
+        "overtrading": {"expected": 3.0, "actual": 6, "excess": 3, "excess_pnl": -120.0},
+        "attribution": {"band_lo_days": 5.0, "band_hi_days": 20.0,
+                        "early_exit_shortfall": 40.0, "late_exit_excess": 90.0,
+                        "counterfactuals": []},
+        "stop_churn": [{"ticker": "EEE"}],
+    }
+    d["run_cards"] = {"sim": {
+        "command": "sim", "created_at": "2026-07-12T21:30:00+00:00",
+        "git_head": "3b8f615aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "params_hash": "baf568008c4db36b",
+        "validation": {"permutation": {"p_value_max_dd": 0.2},
+                       "bootstrap": {"ci_lower": -0.32, "ci_upper": 3.16,
+                                     "prob_positive": 0.876}}}}
+    return d
+
+
+def test_new_cards_render_and_stay_complete():
+    out = html.dashboard_html(_sample_v2())
+    # behavior + rigor cards present
+    assert "Behavior mirror" in out and "Backtest validation" in out
+    # signal lab groups live vs candidates and shows lifecycle dots + weights
+    assert "Live signals" in out and "Candidates" in out
+    assert 'class="lcs"' in out and "Candidate re-weighting keeps" in out
+    # provenance footer traces the sim run card
+    assert "Run receipts" in out and "3b8f615a" in out and "baf56800" in out
+    # RUNTIME completeness on a factor-bearing render: every data-term defined
+    import re as _re
+    from render import glossary
+    for m in _re.finditer(r'data-term="([^"]+)"', out):
+        assert m.group(1) in glossary.KEYS, f"undefined term: {m.group(1)}"
+
+
+def test_status_strip_whispers_when_healthy_shouts_on_failure():
+    d = _sample_v2()
+    d["last_run"] = {"job": "daily", "status": "ok", "ended": "2026-07-12T20:30:00",
+                     "stale": False, "age_h": 1.0}
+    d["recon"] = {"ok": True, "at": "2026-07-12T20:30"}
+    out = html.dashboard_html(d)
+    assert 'class="statusbar"' in out
+    assert "Automation healthy" not in out          # no full green banners
+    # failure path: the old banners come back verbatim
+    d["recon"] = {"ok": False, "at": "2026-07-06T20:30",
+                  "discrepancies": [{"field": "cash(broker vs ledger)"}]}
+    out2 = html.dashboard_html(d)
+    assert "Accounting drift" in out2 and "./track audit" in out2
+
+
+def test_behavior_empty_state_is_honest():
+    d = _sample_v2()
+    d["behavior"] = {"n_roundtrips": 0, "n_open_positions": 15, "confidence": "low"}
+    out = html.dashboard_html(d)
+    assert "No closed round-trips yet" in out and "15 open now" in out
+
+
+def test_equity_chart_interactivity_hooks_present():
+    out = html.dashboard_html(_sample_v2())
+    assert 'id="eq-data"' in out and 'id="eq-hit"' in out and 'id="eq-xh"' in out
+    assert "qt_series" in out                       # legend toggle persistence
