@@ -1698,6 +1698,9 @@ footer{color:var(--muted2);font-size:12px;margin-top:28px;border-top:1px solid v
 }
 @media (max-width:520px){
   .shell{padding:18px 13px 60px;} .verdict-h{font-size:19px;} h1{font-size:24px;}
+  /* the full-bleed nav must mirror the tighter shell padding or it pokes
+     past the viewport and drags the whole page into horizontal scroll */
+  nav#qtnav{margin:0 -13px 20px;padding:9px 13px;}
   /* positions: drop Sector + %PORT so the essentials fit without side-scroll */
   #positions .tbl th:nth-child(2),#positions .tbl td:nth-child(2),
   #positions .tbl th:nth-child(7),#positions .tbl td:nth-child(7){display:none;}
