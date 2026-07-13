@@ -18,6 +18,7 @@ before it reaches the page (Insight B13 — content is data, never markup).
 from __future__ import annotations
 
 import html as _html
+import json as _json
 import re
 
 from render import glossary as _gloss
@@ -137,10 +138,19 @@ def _equity_summary(snaps: list[dict]) -> dict:
             "excess": (strat - spy) if spy is not None else None}
 
 
-# Distinct hues for the fleet overlay lines (flagship stays var(--accent),
-# SPY stays the dashed muted line). Order matches leaderboard iteration.
-_FLEET_HUES = ["#3fc17d", "#e2b23f", "#f0595c", "#a78bfa", "#38bdf8",
-               "#f472b6", "#facc15", "#34d399", "#fb923c", "#818cf8"]
+# Fleet overlay series encoding (flagship stays var(--accent), SPY the dashed
+# muted line). Hues are theme-aware CSS vars validated per surface (dataviz
+# six-checks); members beyond the 7 slots get COMPOSITE encoding (hue + dash)
+# rather than cycling hues. Assignment follows registry order, so color
+# follows the entity, never its rank.
+_FLEET_SLOTS = [("var(--s2)", ""), ("var(--s3)", ""), ("var(--s4)", ""),
+                ("var(--s5)", ""), ("var(--s6)", ""), ("var(--s7)", ""),
+                ("var(--s8)", ""), ("var(--s2)", "4 3"), ("var(--s3)", "4 3"),
+                ("var(--s5)", "4 3")]
+
+
+def _sid(label: str) -> str:
+    return "".join(c if c.isalnum() else "-" for c in str(label).lower()).strip("-")
 
 
 def _svg_equity(snaps: list[dict], fleet: list[dict] | None = None) -> str:
@@ -158,21 +168,28 @@ def _svg_equity(snaps: list[dict], fleet: list[dict] | None = None) -> str:
     dates = [str(s.get("snapshot_date", ""))[:10]
              for s in (snaps or []) if s.get("total_value")]
     date_ix = {d: i for i, d in enumerate(dates)}
+    n = len(pts)
     members = []
     for k, r in enumerate(r for r in (fleet or []) if r.get("kind") != "flagship"):
         mpts = [(date_ix[d], v) for d, v in (r.get("series") or []) if d in date_ix]
         if not mpts:
             continue
         m0 = mpts[0][1] or 1.0
-        members.append({"label": r.get("label"),
-                        "hue": _FLEET_HUES[k % len(_FLEET_HUES)],
+        hue, dash = _FLEET_SLOTS[k % len(_FLEET_SLOTS)]
+        members.append({"label": r.get("label"), "sid": _sid(r.get("label")),
+                        "hue": hue, "dash": dash,
                         "pts": [(i, v / m0 * 100.0) for i, v in mpts]})
+    # Spaghetti control: only the two members with the strongest current book
+    # are visible by default; the rest start toggled off (legend re-enables,
+    # choice persists via localStorage in the chart JS).
+    ranked = sorted(members, key=lambda m: -(m["pts"][-1][1]))
+    default_on = {m["sid"] for m in ranked[:2]}
     allv = (strat + [b for b in bench if b is not None]
             + [v for m in members for _, v in m["pts"]])
     lo, hi = min(allv), max(allv)
     pad = max((hi - lo) * 0.18, 0.3)
     lo, hi = lo - pad, hi + pad
-    X0, X1, Y0, Y1 = 52, 660, 24, 232
+    X0, X1, Y0, Y1 = 52, 700, 24, 224
     n = len(pts)
 
     def xf(i):
@@ -190,16 +207,29 @@ def _svg_equity(snaps: list[dict], fleet: list[dict] | None = None) -> str:
     while tv >= int(lo) + 1:
         gy = yf(tv)
         stroke = "var(--border)" if tv == 100 else "var(--border-soft)"
-        grid.append(f'<line x1="52" x2="660" y1="{gy:.1f}" y2="{gy:.1f}" stroke="{stroke}" '
-                    f'stroke-width="1"/><text x="44" y="{gy + 3.5:.1f}" text-anchor="end" '
+        grid.append(f'<line x1="{X0}" x2="{X1}" y1="{gy:.1f}" y2="{gy:.1f}" stroke="{stroke}" '
+                    f'stroke-width="1"/><text x="{X0 - 8}" y="{gy + 3.5:.1f}" text-anchor="end" '
                     f'fill="var(--muted2)" font-size="10">{tv}</text>')
         tv -= 1
-    band = ""
-    if have_bench:
-        top = [f"{xf(i):.1f},{yf(v):.1f}" for i, v in enumerate(strat)]
-        bot = [f"{xf(j):.1f},{yf(bench[j]):.1f}" for j in range(n - 1, -1, -1)
-               if bench[j] is not None]
-        band = f'<polygon points="{" ".join(top + bot)}" fill="var(--neg)" opacity="0.07"/>'
+    # X-axis date ticks — first, last, and up to three between (deduped).
+    tick_ix = sorted({0, n // 4, n // 2, (3 * n) // 4, n - 1})
+    xticks = "".join(
+        f'<text x="{xf(i):.1f}" y="246" text-anchor="{"start" if i == 0 else "end" if i == n - 1 else "middle"}" '
+        f'fill="var(--muted2)" font-size="9.5">{_esc(dates[i][5:] if i < len(dates) else "")}</text>'
+        for i in tick_ix if i < len(dates))
+    # Drawdown shading: soft fill between the flagship's running peak and the
+    # line itself — the underwater view of every give-back from a high.
+    peak = []
+    p = strat[0]
+    for v in strat:
+        p = max(p, v)
+        peak.append(p)
+    dd_band = ""
+    if any(peak[i] - strat[i] > 1e-9 for i in range(n)):
+        top = [f"{xf(i):.1f},{yf(peak[i]):.1f}" for i in range(n)]
+        bot = [f"{xf(i):.1f},{yf(strat[i]):.1f}" for i in range(n - 1, -1, -1)]
+        dd_band = (f'<polygon points="{" ".join(top + bot)}" fill="var(--neg)" '
+                   f'opacity="0.08"/>')
     ys, yp = yf(strat[-1]), (yf(bench[-1]) if bench[-1] is not None else yf(strat[-1]))
     sm = _equity_summary(snaps)
 
@@ -207,50 +237,94 @@ def _svg_equity(snaps: list[dict], fleet: list[dict] | None = None) -> str:
         return f"{'+' if v >= 0 else '−'}{abs(v):.1f}%"
 
     strat_lbl = f"{strat[-1]:.1f} · {fp(sm.get('strat', 0))}"
+    # Endpoint labels sit INSIDE the plot rect (anchored end, nudged apart if
+    # the lines finish close) so they never clip on narrow screens.
+    lx = X1 - 8
+    y_s, y_b = ys, yp
+    if have_bench and abs(y_s - y_b) < 26:            # collision → push apart
+        if y_s <= y_b:
+            y_s, y_b = min(y_s, y_b) - 13, max(y_s, y_b) + 13
+        else:
+            y_b, y_s = min(y_s, y_b) - 13, max(y_s, y_b) + 13
+    y_s = max(Y0 + 12, min(Y1 - 14, y_s))
+    strat_end = (f'<circle cx="{X1}" cy="{ys:.1f}" r="4" fill="var(--accent)"/>'
+                 f'<text x="{lx}" y="{y_s - 6:.1f}" text-anchor="end" fill="var(--accent)" '
+                 f'font-size="11" font-weight="600">Strategy <tspan fill="var(--muted)" '
+                 f'font-size="10" font-weight="400">{strat_lbl}</tspan></text>')
     # F4 (stress-test fix): the endpoint label must tolerate a TRAILING None
     # benchmark (last snapshot missing benchmark_value while earlier ones have
-    # it) — the old and/or nested f-string formatted bench[-1] unconditionally
-    # and crashed the render.
+    # it) — never format bench[-1] unconditionally.
     spy_end = ""
     if have_bench:
         if bench[-1] is not None and sm.get("spy") is not None:
             spy_lbl = f"{bench[-1]:.1f} · {fp(sm['spy'])}"
         else:
             spy_lbl = ""
-        spy_end = (f'<circle cx="660" cy="{yp:.1f}" r="3.5" fill="var(--muted)"/>'
-                   f'<text x="672" y="{yp - 3:.1f}" fill="var(--muted)" font-size="11" '
-                   f'font-weight="600">SPY</text>'
-                   f'<text x="672" y="{yp + 10:.1f}" fill="var(--muted)" '
-                   f'font-size="10">{spy_lbl}</text>')
+        y_b = max(Y0 + 12, min(Y1 - 4, y_b))
+        spy_end = (f'<circle cx="{X1}" cy="{yp:.1f}" r="3.5" fill="var(--muted)"/>'
+                   f'<text x="{lx}" y="{y_b + 14:.1f}" text-anchor="end" fill="var(--muted)" '
+                   f'font-size="11" font-weight="600">SPY <tspan font-size="10" '
+                   f'font-weight="400">{spy_lbl}</tspan></text>')
     spy_line = (f'<polyline points="{spy_pts}" fill="none" stroke="var(--muted)" '
                 f'stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>' if spy_pts else "")
     # Member lines draw UNDER the flagship (thin, translucent); a book with a
     # single aligned snapshot shows as a start marker until history accrues.
     fleet_svg = []
     for m in members:
+        off = "" if m["sid"] in default_on else " off"
+        dash = f' stroke-dasharray="{m["dash"]}"' if m["dash"] else ""
         if len(m["pts"]) == 1:
             i, v = m["pts"][0]
             fleet_svg.append(f'<circle cx="{xf(i):.1f}" cy="{yf(v):.1f}" r="3" '
-                             f'fill="{m["hue"]}" opacity="0.85"/>')
+                             f'fill="{m["hue"]}" opacity="0.85" '
+                             f'class="fseries{off}" data-sid="{_esc(m["sid"])}"/>')
         else:
             p = " ".join(f"{xf(i):.1f},{yf(v):.1f}" for i, v in m["pts"])
             fleet_svg.append(f'<polyline points="{p}" fill="none" stroke="{m["hue"]}" '
-                             f'stroke-width="1.5" opacity="0.75"/>')
+                             f'stroke-width="1.5" opacity="0.75"{dash} '
+                             f'class="fseries{off}" data-sid="{_esc(m["sid"])}"/>')
     legend = ""
     if members:
         # Members only — the header's eq-legend already keys Strategy + SPY.
-        chips = [f'<span class="eleg"><i style="background:{m["hue"]}"></i>'
-                 f'{_esc(m["label"])}</span>' for m in members]
-        legend = f'<div class="elegend">{"".join(chips)}</div>'
+        # Chips are BUTTONS: click toggles the series (composite-encoded dash
+        # slots show a dashed swatch so identity never rides on hue alone).
+        chips = []
+        for m in members:
+            off = "" if m["sid"] in default_on else " off"
+            sw = (f'border-top:3px dashed {m["hue"]};height:0;background:none;'
+                  if m["dash"] else f"background:{m['hue']};")
+            chips.append(f'<button type="button" class="eleg{off}" '
+                         f'data-sid="{_esc(m["sid"])}" aria-pressed='
+                         f'"{"true" if m["sid"] in default_on else "false"}">'
+                         f'<i style="{sw}"></i>{_esc(m["label"])}</button>')
+        legend = (f'<div class="elegend" id="eq-legend">{"".join(chips)}'
+                  f'<span class="muted2 small" style="margin-left:auto">click a '
+                  f'strategy to show/hide</span></div>')
+    # Hover data for the crosshair tooltip — every series' value per date.
+    series_js = [{"id": "strategy", "label": "Strategy", "css": "var(--accent)",
+                  "vals": [round(v, 2) for v in strat]}]
+    if have_bench:
+        series_js.append({"id": "spy", "label": "SPY", "css": "var(--muted)",
+                          "vals": [None if b is None else round(b, 2) for b in bench]})
+    for m in members:
+        vals: list = [None] * n
+        for i, v in m["pts"]:
+            vals[i] = round(v, 2)
+        series_js.append({"id": m["sid"], "label": m["label"], "css": m["hue"],
+                          "vals": vals})
+    eq_data = _json.dumps({"dates": dates, "x0": X0, "x1": X1, "n": n,
+                           "series": series_js}).replace("</", "<\\/")
     return (f'<svg viewBox="0 0 760 260" preserveAspectRatio="xMidYMid meet" class="chart" '
-            f'role="img" aria-label="Equity curve — every fleet strategy vs SPY, '
-            f'each indexed to 100 at its own start.">'
-            f'{"".join(grid)}{band}{spy_line}{"".join(fleet_svg)}'
+            f'id="eq-svg" role="img" aria-label="Equity curve — every fleet strategy vs SPY, '
+            f'each indexed to 100 at its own start. Strategy {strat_lbl}.">'
+            f'{"".join(grid)}{xticks}{dd_band}{spy_line}{"".join(fleet_svg)}'
             f'<polyline points="{strat_pts}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>'
-            f'<circle cx="660" cy="{ys:.1f}" r="4" fill="var(--accent)"/>'
-            f'<text x="672" y="{ys - 3:.1f}" fill="var(--accent)" font-size="11" font-weight="600">Strategy</text>'
-            f'<text x="672" y="{ys + 10:.1f}" fill="var(--muted)" font-size="10">{strat_lbl}</text>'
-            f'{spy_end}</svg>{legend}')
+            f'{strat_end}{spy_end}'
+            f'<line id="eq-xh" x1="0" x2="0" y1="{Y0}" y2="{Y1}" stroke="var(--muted2)" '
+            f'stroke-width="1" opacity="0"/>'
+            f'<rect id="eq-hit" x="{X0}" y="{Y0}" width="{X1 - X0}" height="{Y1 - Y0}" '
+            f'fill="transparent"/></svg>{legend}'
+            f'<script type="application/json" id="eq-data">{eq_data}</script>')
 
 
 # ── hand-rolled bars / donut (no libraries) ──────────────────────────────────
@@ -1116,6 +1190,57 @@ _PAGE_JS = r"""(function(){
     var k=table.getAttribute('data-sort-key'); if(k) applySort(table,k,parseInt(table.getAttribute('data-sort-dir'),10)||1);
   });
 
+  // ── equity chart: series toggles + crosshair tooltip ──
+  (function(){
+    var blob=document.getElementById('eq-data'), svg=document.getElementById('eq-svg');
+    if(!blob||!svg) return;
+    var D; try{ D=JSON.parse(blob.textContent); }catch(e){ return; }
+    // legend toggles — persist per-series visibility overrides
+    var ovr={}; try{ ovr=JSON.parse(localStorage.getItem('qt_series')||'{}')||{}; }catch(e){}
+    function setSeries(sid,on){
+      document.querySelectorAll('.fseries[data-sid="'+sid+'"]').forEach(function(el){ el.classList.toggle('off',!on); });
+      document.querySelectorAll('.eleg[data-sid="'+sid+'"]').forEach(function(b){ b.classList.toggle('off',!on); b.setAttribute('aria-pressed',on?'true':'false'); });
+    }
+    Object.keys(ovr).forEach(function(sid){ setSeries(sid, !!ovr[sid]); });
+    document.querySelectorAll('.eleg[data-sid]').forEach(function(b){
+      b.addEventListener('click',function(){
+        var sid=b.getAttribute('data-sid'), on=b.classList.contains('off');
+        setSeries(sid,on); ovr[sid]=on?1:0;
+        try{ localStorage.setItem('qt_series',JSON.stringify(ovr)); }catch(e){}
+      });
+    });
+    // crosshair + tooltip
+    var xh=document.getElementById('eq-xh'), hit=document.getElementById('eq-hit');
+    var etip=document.createElement('div'); etip.className='eq-tip'; document.body.appendChild(etip);
+    function visible(sid){ var el=document.querySelector('.fseries[data-sid="'+sid+'"]');
+      return !el || !el.classList.contains('off'); }
+    function fmt(v){ return v==null?null:(v>=100?'+':'−')+Math.abs(v-100).toFixed(1)+'%'; }
+    function show(ev){
+      var r=svg.getBoundingClientRect(), sx=760/r.width;
+      var vx=(ev.clientX-r.left)*sx;
+      var i=Math.round((vx-D.x0)/((D.x1-D.x0)/Math.max(1,D.n-1)));
+      i=Math.max(0,Math.min(D.n-1,i));
+      var cx=D.x0+i*(D.x1-D.x0)/Math.max(1,D.n-1);
+      xh.setAttribute('x1',cx); xh.setAttribute('x2',cx); xh.setAttribute('opacity','0.55');
+      var rows='';
+      D.series.forEach(function(s){
+        if(s.id!=='strategy'&&s.id!=='spy'&&!visible(s.id)) return;
+        var v=s.vals[i]; if(v==null) return;
+        rows+='<div class="r"><i style="background:'+s.css+'"></i>'+esc(s.label)+'<b>'+v.toFixed(1)+' · '+fmt(v)+'</b></div>';
+      });
+      if(!rows){ hide(); return; }
+      etip.innerHTML='<div class="d">'+esc(D.dates[i]||'')+'</div>'+rows;
+      etip.style.opacity='1';
+      var tw=etip.offsetWidth, left=ev.clientX+14;
+      if(left+tw>innerWidth-8) left=ev.clientX-tw-14;
+      etip.style.left=Math.max(8,left)+'px';
+      etip.style.top=Math.max(8,ev.clientY-12)+'px';
+    }
+    function hide(){ etip.style.opacity='0'; xh.setAttribute('opacity','0'); }
+    hit.addEventListener('mousemove',show);
+    hit.addEventListener('mouseleave',hide);
+  })();
+
   // ── scroll-spy + back-to-top ──
   var links={}; document.querySelectorAll('#qtnav [data-jump]').forEach(function(a){ links[a.getAttribute('data-jump')]=a; });
   var ids=Object.keys(links);
@@ -1156,6 +1281,11 @@ _STYLE = """
   --border:#232c3b; --border-soft:#1a222f; --text:#e7ebf3; --text2:#c2cad9; --muted:#98a1b3; --muted2:#767f92;
   --pos:#3fc17d; --pos-dim:#14301f; --pos-line:#1f5738; --neg:#f0595c; --neg-dim:#33161a; --neg-line:#6b2529;
   --accent:#5b9dff; --warn:#e2b23f; --warn-dim:#2c2410;
+  --regime:var(--warn);
+  /* Fleet series slots — validated categorical steps for THIS surface (dataviz
+     six-checks, dark band); light mode re-steps the same hues below. Slot 1
+     (blue) is reserved for the flagship --accent. */
+  --s2:#199e70; --s3:#c98500; --s4:#008300; --s5:#9085e9; --s6:#e66767; --s7:#d55181; --s8:#d95926;
   --shadow:0 1px 2px #0007, 0 10px 28px #0005;
   --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -1166,6 +1296,7 @@ html[data-theme="light"]{
   --border:#d7dee8; --border-soft:#e7ecf3; --text:#131a24; --text2:#3a4453; --muted:#5b6472;
   --muted2:#8791a1; --pos:#1a9d5c; --pos-dim:#dcf5e7; --pos-line:#a9e0c2; --neg:#d63b3f; --neg-dim:#fbe3e4; --neg-line:#f2b8ba;
   --accent:#2f6fd6; --warn:#b8860b; --warn-dim:#f7edd0;
+  --s2:#1baf7a; --s3:#eda100; --s4:#008300; --s5:#4a3aa7; --s6:#e34948; --s7:#e87ba4; --s8:#eb6834;
   --shadow:0 1px 2px #0000001a, 0 8px 22px #0000001f; color-scheme:light;
 }
 *{box-sizing:border-box;}
@@ -1216,7 +1347,7 @@ nav#qtnav a{color:var(--muted);text-decoration:none;padding:5px 11px;border-radi
 nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600;}
 /* verdict */
 .verdict{position:relative;overflow:hidden;background:linear-gradient(160deg,var(--surface2),var(--surface));border:1px solid var(--border);border-radius:16px;padding:22px 24px;margin-bottom:20px;box-shadow:var(--shadow);scroll-margin-top:64px;}
-.verdict-bar{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--warn);}
+.verdict-bar{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--regime);}
 .eyebrow{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2);}
 .eyebrow .rule,.zone-h .rule{height:1px;flex:1;background:var(--border-soft);}
 .verdict-h{margin:6px 0 10px;font-size:22px;font-weight:600;line-height:1.25;}
@@ -1240,7 +1371,8 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .card h3{margin:0 0 4px;font-size:16px;font-weight:600;}
 .card-hd{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px;}
 .hint{font-size:12px;color:var(--muted2);}
-.zone-h{display:flex;align-items:center;gap:10px;margin:4px 0 14px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);scroll-margin-top:60px;}
+.zone-h{display:flex;align-items:center;gap:10px;margin:22px 0 14px;font-size:12.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--text2);scroll-margin-top:60px;}
+.zone-h::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--regime);opacity:.75;flex:0 0 auto;}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:8px;}
 .callout{margin:12px 0 0;font-size:12.5px;color:var(--muted);background:var(--inset);border-radius:8px;padding:9px 11px;}
 .empty{color:var(--muted);font-size:14px;padding:8px 0;}
@@ -1252,17 +1384,26 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .eq-legend span{display:inline-flex;align-items:center;gap:6px;color:var(--text2);}
 .lg-strat{width:16px;height:3px;border-radius:2px;background:var(--accent);}
 .lg-spy{width:16px;height:0;border-top:2px dashed var(--muted);}
-.elegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:11.5px;}
-.eleg{display:inline-flex;align-items:center;gap:5px;color:var(--muted);}
+.elegend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:11.5px;}
+.eleg{all:unset;display:inline-flex;align-items:center;gap:5px;color:var(--muted);cursor:pointer;padding:2px 6px;border-radius:6px;}
+.eleg:hover{background:var(--raise);color:var(--text2);}
+.eleg:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 .eleg i{width:12px;height:3px;border-radius:2px;display:inline-block;}
+.eleg.off{opacity:.38;} .eleg.off i{background:var(--muted2)!important;}
+.fseries.off{opacity:0;pointer-events:none;}
+.eq-tip{position:fixed;z-index:9100;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:9px 11px;box-shadow:0 8px 26px #000a;font:11.5px/1.6 var(--mono);color:var(--text2);pointer-events:none;opacity:0;transition:opacity .08s;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.eq-tip .d{color:var(--muted);margin-bottom:2px;}
+.eq-tip .r{display:flex;align-items:center;gap:6px;}
+.eq-tip .r i{width:9px;height:3px;border-radius:2px;display:inline-block;flex:0 0 auto;}
+.eq-tip .r b{margin-left:auto;color:var(--text);font-weight:600;padding-left:12px;}
 /* KPIs */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:13px;margin-bottom:14px;}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:15px 16px;box-shadow:var(--shadow);}
 .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
-.kpi-val{font-size:24px;font-weight:600;margin-top:8px;}
+.kpi-val{font-size:24px;font-weight:600;margin-top:8px;font-variant-numeric:tabular-nums;}
 .kpi-sub{font-size:11px;color:var(--muted2);margin-top:3px;}
 /* tables */
-.tbl{width:100%;border-collapse:collapse;font-size:14px;}
+.tbl{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums;}
 .tbl th{text-align:left;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--border-soft);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
 .tbl th.right{text-align:right;}
 .tbl td{padding:8px;border-bottom:1px solid var(--border-soft);}
@@ -1279,7 +1420,7 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:11px;}
 .stats.two{grid-template-columns:1fr 1fr;}
 .stat{background:var(--inset);border:1px solid var(--border-soft);border-radius:11px;padding:12px 13px;}
-.stat-v{font-size:21px;font-weight:600;}
+.stat-v{font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;}
 .stat-l{font-size:11.5px;color:var(--muted);margin-top:3px;}
 /* picks */
 .pick{padding:12px 0;border-bottom:1px solid var(--border-soft);}
@@ -1448,8 +1589,13 @@ def dashboard_html(data: dict) -> str:
     gloss_json = _gloss.as_json().replace("</", "<\\/")
     script_block = "<script>\n" + _PAGE_JS.replace("__GLOSSARY_JSON__", gloss_json) + "\n</script>"
 
+    # Regime-tinted accent: the whole page carries a subtle hue for the market
+    # state (verdict edge, zone ticks) — bull green, bear red, sideways amber.
+    rlabel = str(regime.get("label", "")).lower()
+    rvar = "pos" if rlabel == "bull" else "neg" if rlabel == "bear" else "warn"
+
     return (
-        '<!DOCTYPE html>\n<html lang="en"><head>\n'
+        f'<!DOCTYPE html>\n<html lang="en" style="--regime:var(--{rvar})"><head>\n'
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         '<title>Quant Tracker — Dashboard</title>\n'
