@@ -134,6 +134,28 @@ def _latest_run() -> dict:
         return {}
 
 
+def _latest_run_cards() -> dict:
+    """Newest run card per command (U32 provenance), keyed by command, or {}.
+
+    Feeds the dashboard's provenance footer and the rigor card (a sim card's
+    validation block carries the permutation/bootstrap results).
+    """
+    out: dict = {}
+    try:
+        from utils.run_card import RUN_CARD_DIR
+        for p in sorted(RUN_CARD_DIR.glob("*.json")):
+            try:
+                card = json.loads(p.read_text())
+                cmd = str(card.get("command") or "")
+                if cmd:
+                    out[cmd] = card          # sorted ascending → last wins
+            except Exception:
+                continue
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("run cards unreadable: %s", exc)
+    return out
+
+
 def _latest_recon() -> dict:
     """The most recent RECON_OK / RECON_DRIFT event (Phase 29), or {}.
 
@@ -437,6 +459,7 @@ def build_all() -> dict:
         logger.debug("scorecard/review skipped: %s", exc)
 
     # 7b) Behavior — engine trade-quality mirror over the fill ledger (U30).
+    behavior = None
     try:
         from auto_trader.monitor.behavior import analyze_behavior
 
@@ -486,6 +509,7 @@ def build_all() -> dict:
             "scorecard": scorecard, "copilot": _latest_copilot(),
             "last_run": _latest_run(), "tournament": _latest_tournament(),
             "signal_lab": _latest_signal_lab(), "recon": _latest_recon(),
+            "behavior": behavior, "run_cards": _latest_run_cards(),
         }))
         written.append("Dashboard.html")
     except Exception as exc:

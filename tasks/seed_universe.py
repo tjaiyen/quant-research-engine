@@ -440,7 +440,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  total price rows: {summary['total_price_rows']}")
     print()
     print(f"Tickers in DB now: {len(list_tickers())}")
-    return 0 if summary["failed"] == 0 else 1
+    # Exit-code tolerance: over a 200+ ticker universe on free providers, a
+    # single permanently-broken symbol (2026-07-12: CTRA 404s on Stooq and
+    # fails on yfinance) must not turn EVERY weekly red and burn the 300s
+    # retry. Fail only on systemic breakage (>5% of the universe or >10
+    # tickers) — the July-12 DNS outage (66 failures) still fails loudly.
+    total = (summary["ok"] + summary["failed"] + summary["skipped"]) or 1
+    tolerable = summary["failed"] <= min(10, max(2, int(total * 0.05)))
+    if summary["failed"] and tolerable:
+        print(f"  ({summary['failed']} isolated ticker failure(s) tolerated — "
+              f"systemic threshold is >{min(10, max(2, int(total * 0.05)))})")
+    return 0 if tolerable else 1
 
 
 if __name__ == "__main__":

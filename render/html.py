@@ -18,6 +18,7 @@ before it reaches the page (Insight B13 — content is data, never markup).
 from __future__ import annotations
 
 import html as _html
+import json as _json
 import re
 
 from render import glossary as _gloss
@@ -137,10 +138,19 @@ def _equity_summary(snaps: list[dict]) -> dict:
             "excess": (strat - spy) if spy is not None else None}
 
 
-# Distinct hues for the fleet overlay lines (flagship stays var(--accent),
-# SPY stays the dashed muted line). Order matches leaderboard iteration.
-_FLEET_HUES = ["#3fc17d", "#e2b23f", "#f0595c", "#a78bfa", "#38bdf8",
-               "#f472b6", "#facc15", "#34d399", "#fb923c", "#818cf8"]
+# Fleet overlay series encoding (flagship stays var(--accent), SPY the dashed
+# muted line). Hues are theme-aware CSS vars validated per surface (dataviz
+# six-checks); members beyond the 7 slots get COMPOSITE encoding (hue + dash)
+# rather than cycling hues. Assignment follows registry order, so color
+# follows the entity, never its rank.
+_FLEET_SLOTS = [("var(--s2)", ""), ("var(--s3)", ""), ("var(--s4)", ""),
+                ("var(--s5)", ""), ("var(--s6)", ""), ("var(--s7)", ""),
+                ("var(--s8)", ""), ("var(--s2)", "4 3"), ("var(--s3)", "4 3"),
+                ("var(--s5)", "4 3")]
+
+
+def _sid(label: str) -> str:
+    return "".join(c if c.isalnum() else "-" for c in str(label).lower()).strip("-")
 
 
 def _svg_equity(snaps: list[dict], fleet: list[dict] | None = None) -> str:
@@ -158,21 +168,28 @@ def _svg_equity(snaps: list[dict], fleet: list[dict] | None = None) -> str:
     dates = [str(s.get("snapshot_date", ""))[:10]
              for s in (snaps or []) if s.get("total_value")]
     date_ix = {d: i for i, d in enumerate(dates)}
+    n = len(pts)
     members = []
     for k, r in enumerate(r for r in (fleet or []) if r.get("kind") != "flagship"):
         mpts = [(date_ix[d], v) for d, v in (r.get("series") or []) if d in date_ix]
         if not mpts:
             continue
         m0 = mpts[0][1] or 1.0
-        members.append({"label": r.get("label"),
-                        "hue": _FLEET_HUES[k % len(_FLEET_HUES)],
+        hue, dash = _FLEET_SLOTS[k % len(_FLEET_SLOTS)]
+        members.append({"label": r.get("label"), "sid": _sid(r.get("label")),
+                        "hue": hue, "dash": dash,
                         "pts": [(i, v / m0 * 100.0) for i, v in mpts]})
+    # Spaghetti control: only the two members with the strongest current book
+    # are visible by default; the rest start toggled off (legend re-enables,
+    # choice persists via localStorage in the chart JS).
+    ranked = sorted(members, key=lambda m: -(m["pts"][-1][1]))
+    default_on = {m["sid"] for m in ranked[:2]}
     allv = (strat + [b for b in bench if b is not None]
             + [v for m in members for _, v in m["pts"]])
     lo, hi = min(allv), max(allv)
     pad = max((hi - lo) * 0.18, 0.3)
     lo, hi = lo - pad, hi + pad
-    X0, X1, Y0, Y1 = 52, 660, 24, 232
+    X0, X1, Y0, Y1 = 52, 700, 24, 224
     n = len(pts)
 
     def xf(i):
@@ -190,16 +207,29 @@ def _svg_equity(snaps: list[dict], fleet: list[dict] | None = None) -> str:
     while tv >= int(lo) + 1:
         gy = yf(tv)
         stroke = "var(--border)" if tv == 100 else "var(--border-soft)"
-        grid.append(f'<line x1="52" x2="660" y1="{gy:.1f}" y2="{gy:.1f}" stroke="{stroke}" '
-                    f'stroke-width="1"/><text x="44" y="{gy + 3.5:.1f}" text-anchor="end" '
+        grid.append(f'<line x1="{X0}" x2="{X1}" y1="{gy:.1f}" y2="{gy:.1f}" stroke="{stroke}" '
+                    f'stroke-width="1"/><text x="{X0 - 8}" y="{gy + 3.5:.1f}" text-anchor="end" '
                     f'fill="var(--muted2)" font-size="10">{tv}</text>')
         tv -= 1
-    band = ""
-    if have_bench:
-        top = [f"{xf(i):.1f},{yf(v):.1f}" for i, v in enumerate(strat)]
-        bot = [f"{xf(j):.1f},{yf(bench[j]):.1f}" for j in range(n - 1, -1, -1)
-               if bench[j] is not None]
-        band = f'<polygon points="{" ".join(top + bot)}" fill="var(--neg)" opacity="0.07"/>'
+    # X-axis date ticks — first, last, and up to three between (deduped).
+    tick_ix = sorted({0, n // 4, n // 2, (3 * n) // 4, n - 1})
+    xticks = "".join(
+        f'<text x="{xf(i):.1f}" y="246" text-anchor="{"start" if i == 0 else "end" if i == n - 1 else "middle"}" '
+        f'fill="var(--muted2)" font-size="9.5">{_esc(dates[i][5:] if i < len(dates) else "")}</text>'
+        for i in tick_ix if i < len(dates))
+    # Drawdown shading: soft fill between the flagship's running peak and the
+    # line itself — the underwater view of every give-back from a high.
+    peak = []
+    p = strat[0]
+    for v in strat:
+        p = max(p, v)
+        peak.append(p)
+    dd_band = ""
+    if any(peak[i] - strat[i] > 1e-9 for i in range(n)):
+        top = [f"{xf(i):.1f},{yf(peak[i]):.1f}" for i in range(n)]
+        bot = [f"{xf(i):.1f},{yf(strat[i]):.1f}" for i in range(n - 1, -1, -1)]
+        dd_band = (f'<polygon points="{" ".join(top + bot)}" fill="var(--neg)" '
+                   f'opacity="0.08"/>')
     ys, yp = yf(strat[-1]), (yf(bench[-1]) if bench[-1] is not None else yf(strat[-1]))
     sm = _equity_summary(snaps)
 
@@ -207,50 +237,94 @@ def _svg_equity(snaps: list[dict], fleet: list[dict] | None = None) -> str:
         return f"{'+' if v >= 0 else '−'}{abs(v):.1f}%"
 
     strat_lbl = f"{strat[-1]:.1f} · {fp(sm.get('strat', 0))}"
+    # Endpoint labels sit INSIDE the plot rect (anchored end, nudged apart if
+    # the lines finish close) so they never clip on narrow screens.
+    lx = X1 - 8
+    y_s, y_b = ys, yp
+    if have_bench and abs(y_s - y_b) < 26:            # collision → push apart
+        if y_s <= y_b:
+            y_s, y_b = min(y_s, y_b) - 13, max(y_s, y_b) + 13
+        else:
+            y_b, y_s = min(y_s, y_b) - 13, max(y_s, y_b) + 13
+    y_s = max(Y0 + 12, min(Y1 - 14, y_s))
+    strat_end = (f'<circle cx="{X1}" cy="{ys:.1f}" r="4" fill="var(--accent)"/>'
+                 f'<text x="{lx}" y="{y_s - 6:.1f}" text-anchor="end" fill="var(--accent)" '
+                 f'font-size="11" font-weight="600">Strategy <tspan fill="var(--muted)" '
+                 f'font-size="10" font-weight="400">{strat_lbl}</tspan></text>')
     # F4 (stress-test fix): the endpoint label must tolerate a TRAILING None
     # benchmark (last snapshot missing benchmark_value while earlier ones have
-    # it) — the old and/or nested f-string formatted bench[-1] unconditionally
-    # and crashed the render.
+    # it) — never format bench[-1] unconditionally.
     spy_end = ""
     if have_bench:
         if bench[-1] is not None and sm.get("spy") is not None:
             spy_lbl = f"{bench[-1]:.1f} · {fp(sm['spy'])}"
         else:
             spy_lbl = ""
-        spy_end = (f'<circle cx="660" cy="{yp:.1f}" r="3.5" fill="var(--muted)"/>'
-                   f'<text x="672" y="{yp - 3:.1f}" fill="var(--muted)" font-size="11" '
-                   f'font-weight="600">SPY</text>'
-                   f'<text x="672" y="{yp + 10:.1f}" fill="var(--muted)" '
-                   f'font-size="10">{spy_lbl}</text>')
+        y_b = max(Y0 + 12, min(Y1 - 4, y_b))
+        spy_end = (f'<circle cx="{X1}" cy="{yp:.1f}" r="3.5" fill="var(--muted)"/>'
+                   f'<text x="{lx}" y="{y_b + 14:.1f}" text-anchor="end" fill="var(--muted)" '
+                   f'font-size="11" font-weight="600">SPY <tspan font-size="10" '
+                   f'font-weight="400">{spy_lbl}</tspan></text>')
     spy_line = (f'<polyline points="{spy_pts}" fill="none" stroke="var(--muted)" '
                 f'stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>' if spy_pts else "")
     # Member lines draw UNDER the flagship (thin, translucent); a book with a
     # single aligned snapshot shows as a start marker until history accrues.
     fleet_svg = []
     for m in members:
+        off = "" if m["sid"] in default_on else " off"
+        dash = f' stroke-dasharray="{m["dash"]}"' if m["dash"] else ""
         if len(m["pts"]) == 1:
             i, v = m["pts"][0]
             fleet_svg.append(f'<circle cx="{xf(i):.1f}" cy="{yf(v):.1f}" r="3" '
-                             f'fill="{m["hue"]}" opacity="0.85"/>')
+                             f'fill="{m["hue"]}" opacity="0.85" '
+                             f'class="fseries{off}" data-sid="{_esc(m["sid"])}"/>')
         else:
             p = " ".join(f"{xf(i):.1f},{yf(v):.1f}" for i, v in m["pts"])
             fleet_svg.append(f'<polyline points="{p}" fill="none" stroke="{m["hue"]}" '
-                             f'stroke-width="1.5" opacity="0.75"/>')
+                             f'stroke-width="1.5" opacity="0.75"{dash} '
+                             f'class="fseries{off}" data-sid="{_esc(m["sid"])}"/>')
     legend = ""
     if members:
         # Members only — the header's eq-legend already keys Strategy + SPY.
-        chips = [f'<span class="eleg"><i style="background:{m["hue"]}"></i>'
-                 f'{_esc(m["label"])}</span>' for m in members]
-        legend = f'<div class="elegend">{"".join(chips)}</div>'
+        # Chips are BUTTONS: click toggles the series (composite-encoded dash
+        # slots show a dashed swatch so identity never rides on hue alone).
+        chips = []
+        for m in members:
+            off = "" if m["sid"] in default_on else " off"
+            sw = (f'border-top:3px dashed {m["hue"]};height:0;background:none;'
+                  if m["dash"] else f"background:{m['hue']};")
+            chips.append(f'<button type="button" class="eleg{off}" '
+                         f'data-sid="{_esc(m["sid"])}" aria-pressed='
+                         f'"{"true" if m["sid"] in default_on else "false"}">'
+                         f'<i style="{sw}"></i>{_esc(m["label"])}</button>')
+        legend = (f'<div class="elegend" id="eq-legend">{"".join(chips)}'
+                  f'<span class="muted2 small" style="margin-left:auto">click a '
+                  f'strategy to show/hide</span></div>')
+    # Hover data for the crosshair tooltip — every series' value per date.
+    series_js = [{"id": "strategy", "label": "Strategy", "css": "var(--accent)",
+                  "vals": [round(v, 2) for v in strat]}]
+    if have_bench:
+        series_js.append({"id": "spy", "label": "SPY", "css": "var(--muted)",
+                          "vals": [None if b is None else round(b, 2) for b in bench]})
+    for m in members:
+        vals: list = [None] * n
+        for i, v in m["pts"]:
+            vals[i] = round(v, 2)
+        series_js.append({"id": m["sid"], "label": m["label"], "css": m["hue"],
+                          "vals": vals})
+    eq_data = _json.dumps({"dates": dates, "x0": X0, "x1": X1, "n": n,
+                           "series": series_js}).replace("</", "<\\/")
     return (f'<svg viewBox="0 0 760 260" preserveAspectRatio="xMidYMid meet" class="chart" '
-            f'role="img" aria-label="Equity curve — every fleet strategy vs SPY, '
-            f'each indexed to 100 at its own start.">'
-            f'{"".join(grid)}{band}{spy_line}{"".join(fleet_svg)}'
+            f'id="eq-svg" role="img" aria-label="Equity curve — every fleet strategy vs SPY, '
+            f'each indexed to 100 at its own start. Strategy {strat_lbl}.">'
+            f'{"".join(grid)}{xticks}{dd_band}{spy_line}{"".join(fleet_svg)}'
             f'<polyline points="{strat_pts}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>'
-            f'<circle cx="660" cy="{ys:.1f}" r="4" fill="var(--accent)"/>'
-            f'<text x="672" y="{ys - 3:.1f}" fill="var(--accent)" font-size="11" font-weight="600">Strategy</text>'
-            f'<text x="672" y="{ys + 10:.1f}" fill="var(--muted)" font-size="10">{strat_lbl}</text>'
-            f'{spy_end}</svg>{legend}')
+            f'{strat_end}{spy_end}'
+            f'<line id="eq-xh" x1="0" x2="0" y1="{Y0}" y2="{Y1}" stroke="var(--muted2)" '
+            f'stroke-width="1" opacity="0"/>'
+            f'<rect id="eq-hit" x="{X0}" y="{Y0}" width="{X1 - X0}" height="{Y1 - Y0}" '
+            f'fill="transparent"/></svg>{legend}'
+            f'<script type="application/json" id="eq-data">{eq_data}</script>')
 
 
 # ── hand-rolled bars / donut (no libraries) ──────────────────────────────────
@@ -376,6 +450,15 @@ def _verdict_section(data: dict) -> str:
         sig_clause = (f' Of the {total_sig} {_dterm("ic", "signals")} measured, '
                       f'<b class="{"pos" if healthy > total_sig / 2 else "warn"}">{healthy} '
                       f'predict forwards</b> and the rest predict backwards.')
+        # When a CANDIDATE factor tops the whole board, say so — that is the
+        # decay-vs-discovery story the lab exists to surface.
+        best_key = max(sl, key=lambda k: (sl[k].get("ic") or -9), default=None)
+        if best_key and best_key not in _SIGNALS and (sl[best_key].get("ic") or 0) > 0.05:
+            bplain = _gloss.GLOSSARY.get(best_key, {}).get("plain", best_key)
+            sig_clause += (f' The strongest signal right now is '
+                           f'<b class="pos"><span class="term" data-term="{_esc(best_key)}">'
+                           f'{_esc(bplain)}</span></b> ({pct(sl[best_key].get("ic"))} IC) — '
+                           f'a candidate factor, measured but not yet trading.')
     snaps_clause = (f' With only <b>{sm.get("n", 0)} snapshots</b> logged, treat everything '
                     f'below as early and unproven.' if sm.get("n", 99) < 8 else "")
 
@@ -443,6 +526,132 @@ def _recon_banner(recon: dict) -> str:
             f'<span>— the {_dterm("reconciliation", "trade-ledger replay")} '
             f'disagrees with: <b>{fields}</b> ({at}) — run '
             f'<code>./track audit</code>.</span></div>')
+
+
+def _status_strip(lr: dict, recon: dict) -> str:
+    """One slim chip row when EVERYTHING is healthy; full banners otherwise.
+
+    Two permanent full-width green banners trained the eye to skip banners —
+    healthy state now whispers, failure still shouts (the failure/stale paths
+    render the exact same banners as before).
+    """
+    auto_ok = bool(lr) and lr.get("status") != "fail" and not lr.get("stale")
+    recon_ok = bool(recon) and bool(recon.get("ok"))
+    if (lr and not auto_ok) or (recon and not recon_ok):
+        return _auto_banner(lr) + _recon_banner(recon)
+    chips = []
+    if lr:
+        chips.append(f'<span class="schip pos" data-term="automation_health">✓ automation '
+                     f'<b>{_esc(lr.get("job", ""))}</b></span>')
+    if recon:
+        chips.append(f'<span class="schip pos" data-term="reconciliation">✓ books reconciled '
+                     f'<b>{_esc(str(recon.get("at", "")).replace("T", " "))}</b></span>')
+    if not chips:
+        return ""
+    return f'<div class="statusbar">{"".join(chips)}</div>'
+
+
+def _behavior_section(b: dict | None) -> str:
+    """Engine trade-quality mirror (U30) — the Behavior.md card, on glass."""
+    if not b:
+        return ""
+    n = b.get("n_roundtrips", 0)
+    if not n:
+        return (f'<section class="card"><h3>Behavior mirror</h3>'
+                f'<p class="muted small">Does the engine hold losers, churn, or '
+                f'mis-time exits? Measured from its own closed trades.</p>'
+                f'<div class="empty">No closed round-trips yet — this card fills '
+                f'in as positions open <i>and</i> close. '
+                f'({b.get("n_open_positions", 0)} open now.)</div></section>')
+    conf = b.get("confidence", "low")
+    conf_note = {"low": f"only {n} closed round-trips — directional, not significant",
+                 "moderate": f"{n} closed round-trips — indicative",
+                 "ok": f"{n} closed round-trips"}.get(conf, "")
+    disp = b.get("disposition") or {}
+    ot = b.get("overtrading") or {}
+    att = b.get("attribution") or {}
+    stats = []
+    if disp:
+        tone = "neg" if disp.get("flagged") else "pos"
+        stats.append(("disposition", f'{num(disp.get("ratio"), 2)}×',
+                      "flagged — holding losers" if disp.get("flagged")
+                      else "not flagged", tone))
+    if ot.get("expected") is not None:
+        ex = ot.get("excess") or 0
+        stats.append(("overtrading", f'{ot.get("actual")} / {ot.get("expected")}',
+                      f'{ex} excess ({money(ot.get("excess_pnl"))})' if ex
+                      else "within budget", "warn" if ex else "pos"))
+    if att:
+        stats.append(("exit_timing", money((att.get("early_exit_shortfall") or 0)
+                                           + (att.get("late_exit_excess") or 0)),
+                      "left on the table", "warn"))
+    stats.append(("profit_factor", num(b.get("profit_factor"), 2)
+                  if b.get("profit_factor") is not None else "—",
+                  f'win rate {pct(b.get("win_rate"), 0)}',
+                  "pos" if (b.get("profit_factor") or 0) >= 1 else "warn"))
+    churn = b.get("stop_churn") or []
+    stats.append(("stop_churn", str(len(churn)),
+                  "re-entries after stops", "warn" if churn else "pos"))
+    cells = "".join(
+        f'<div class="stat"><div class="stat-v {tone}">{_esc(v)}</div>'
+        f'<div class="stat-l"><span class="term" data-term="{_esc(k)}">'
+        f'{_esc(_gloss.GLOSSARY.get(k, {}).get("plain", k))}</span> · {_esc(note)}</div></div>'
+        for k, v, note, tone in stats)
+    return (f'<section class="card"><h3>Behavior mirror '
+            f'<span class="asof">{_esc(conf_note)}</span></h3>'
+            f'<p class="muted small">The engine grading its own realised trades: '
+            f'bias, churn and exit timing.</p>'
+            f'<div class="stats">{cells}</div></section>')
+
+
+def _rigor_section(run_cards: dict) -> str:
+    """Resampling validation from the latest sim run card (U29/U32)."""
+    card = (run_cards or {}).get("sim") or {}
+    val = card.get("validation") or {}
+    perm, boot = val.get("permutation") or {}, val.get("bootstrap") or {}
+    if not perm and not boot:
+        return ""
+    stats = []
+    if perm.get("p_value_max_dd") is not None:
+        p = perm["p_value_max_dd"]
+        stats.append(("permutation_test", f"p = {num(p, 2)}",
+                      "path benign vs own returns" if p > 0.05
+                      else "losses cluster worse than chance",
+                      "pos" if p > 0.05 else "warn"))
+    if boot.get("ci_lower") is not None:
+        stats.append(("bootstrap_ci",
+                      f'[{num(boot.get("ci_lower"), 2)}, {num(boot.get("ci_upper"), 2)}]',
+                      f'P(Sharpe>0) = {pct(boot.get("prob_positive"), 0)}',
+                      "pos" if (boot.get("prob_positive") or 0) > 0.8 else "warn"))
+    if not stats:
+        return ""
+    cells = "".join(
+        f'<div class="stat"><div class="stat-v {tone}">{_esc(v)}</div>'
+        f'<div class="stat-l"><span class="term" data-term="{_esc(k)}">'
+        f'{_esc(_gloss.GLOSSARY.get(k, {}).get("plain", k))}</span> · {_esc(note)}</div></div>'
+        for k, v, note, tone in stats)
+    return (f'<section class="card"><h3>Backtest validation '
+            f'{_asof(card.get("created_at"))}</h3>'
+            f'<p class="muted small">Resampling checks on the latest strategy '
+            f'backtest — complements {_dterm("dsr", "DSR")} and '
+            f'{_dterm("cpcv", "CPCV")}.</p><div class="stats two">{cells}</div></section>')
+
+
+def _provenance(run_cards: dict, as_of: str) -> str:
+    """One muted footer line tracing this page to the runs that produced it."""
+    if not run_cards:
+        return ""
+    bits = []
+    for cmd in ("sim", "signal-lab", "tournament", "backtest"):
+        card = run_cards.get(cmd)
+        if card:
+            head = str(card.get("git_head") or "")[:8] or "?"
+            ph = str(card.get("params_hash") or "")[:8]
+            bits.append(f'<b>{_esc(cmd)}</b> {_esc(head)}·{_esc(ph)}')
+    if not bits:
+        return ""
+    return (f'<span class="term" data-term="run_card">Run receipts</span>: '
+            + " · ".join(bits) + ". ")
 
 
 def _kpis(data: dict) -> str:
@@ -678,28 +887,76 @@ def _scorecard_section(sc: dict | None) -> str:
             f'<p class="muted">{_esc(intro)}</p>{table}{note}</section>')
 
 
+def _lifecycle_chips(cells: dict | None) -> str:
+    """Per-year alive/reversed/dead chips for one signal (U31), or ''."""
+    if not cells:
+        return ""
+    marks = {"alive": ("●", "pos"), "reversed": ("●", "neg"),
+             "dead": ("○", "muted2"), "insufficient": ("·", "muted2")}
+    chips = []
+    for year in sorted(cells):
+        cat = (cells[year] or {}).get("category", "insufficient")
+        glyph, tone = marks.get(cat, ("·", "muted2"))
+        chips.append(f'<span class="lc {tone}" title="{_esc(year)}: {_esc(cat)}">'
+                     f'{glyph}</span>')
+    return f'<span class="lcs">{"".join(chips)}</span>'
+
+
 def _signal_lab_section(sl: dict) -> str:
     sigs = sl.get("signals") or {}
     if not sigs:
         return ""
     val = sl.get("validation") or {}
+    lifecycle = (sl.get("lifecycle") or {}).get("signals") or {}
     strip = ""
     if val.get("candidate_oos") is not None:
-        strip = (f'<p class="muted">{_dterm("out_of_sample", "Fresh-data test")}: candidate '
+        n_oos = val.get("n_oos")
+        held = f" over {n_oos} held-out quarters" if n_oos else ""
+        strip = (f'<p class="muted">{_dterm("out_of_sample", "Fresh-data test")}{held}: candidate '
                  f'<b class="t2">{pct(val.get("candidate_oos"))}</b> · default '
                  f'{pct(val.get("default_oos"))} · SPY {pct(val.get("spy_oos"))}.</p>')
-    bar_rows = []
-    for s, d in sorted(sigs.items(), key=lambda kv: -(kv[1].get("ic") or -9)):
-        ic = d.get("ic")
-        plain = _gloss.GLOSSARY.get(s, {}).get("plain", s)
-        verdict = _esc(d.get("verdict", "")[:18])
-        col = "var(--pos)" if (ic or 0) >= 0 else "var(--neg)"
-        right = (f'{pct(ic)} · <span style="color:{col};font-family:var(--sans)">{verdict}</span>')
-        bar_rows.append((s, plain, ic, right))
+    weights = sl.get("candidate_weights") or {}
+    kept = {k: w for k, w in weights.items() if w and w > 0.001}
+    wchips = ""
+    if kept:
+        chips = "".join(
+            f'<span class="wchip"><span class="term" data-term="{_esc(k)}">'
+            f'{_esc(_gloss.GLOSSARY.get(k, {}).get("plain", k))}</span>'
+            f'<b class="mono">{w * 100:.0f}%</b></span>'
+            for k, w in sorted(kept.items(), key=lambda kv: -kv[1]))
+        wchips = (f'<p class="muted small" style="margin:8px 0 2px">Candidate re-weighting '
+                  f'keeps: {chips}</p>')
+
+    def bar_rows(keys):
+        rows = []
+        for s in sorted(keys, key=lambda k: -(sigs[k].get("ic") or -9)):
+            d = sigs[s]
+            ic = d.get("ic")
+            plain = _gloss.GLOSSARY.get(s, {}).get("plain", s)
+            verdict = _esc(d.get("verdict", "")[:18])
+            col = "var(--pos)" if (ic or 0) >= 0 else "var(--neg)"
+            right = (f'{pct(ic)} · <span style="color:{col};font-family:var(--sans)">'
+                     f'{verdict}</span>{_lifecycle_chips(lifecycle.get(s))}')
+            rows.append((s, plain, ic, right))
+        return rows
+
+    live = [s for s in sigs if s in _SIGNALS]
+    cands = [s for s in sigs if s not in _SIGNALS]
+    groups = ""
+    if live:
+        groups += (f'<div class="sp-hd" style="margin-top:10px">Live signals — these '
+                   f'drive the composite</div>{_diverging_bars(bar_rows(live))}')
+    if cands:
+        groups += (f'<div class="sp-hd" style="margin-top:14px">Candidates — measured '
+                   f'only, never trade without the {_dterm("dsr", "DSR")}/'
+                   f'{_dterm("cpcv", "CPCV")} promotion gate</div>'
+                   f'{_diverging_bars(bar_rows(cands))}')
     return (f'<section class="card"><h3><span class="term" data-term="ic">Signal Lab</span> '
-            f'{_asof(sl.get("as_of"))}</h3>{strip}'
+            f'{_asof(sl.get("as_of"))}</h3>{strip}{wchips}'
             f'<p class="muted small">Bars left of centre predict <b class="neg">backwards</b>; '
-            f'right predict <b class="pos">forwards</b>.</p>{_diverging_bars(bar_rows)}</section>')
+            f'right predict <b class="pos">forwards</b>. Year dots: '
+            f'<b class="pos">●</b> alive · <b class="neg">●</b> reversed · '
+            f'<span class="muted2">○</span> dead.</p>{groups}</section>')
 
 
 def _fleet_holdings_table(holdings: list[dict], names: dict | None = None) -> str:
@@ -1116,13 +1373,67 @@ _PAGE_JS = r"""(function(){
     var k=table.getAttribute('data-sort-key'); if(k) applySort(table,k,parseInt(table.getAttribute('data-sort-dir'),10)||1);
   });
 
+  // ── equity chart: series toggles + crosshair tooltip ──
+  (function(){
+    var blob=document.getElementById('eq-data'), svg=document.getElementById('eq-svg');
+    if(!blob||!svg) return;
+    var D; try{ D=JSON.parse(blob.textContent); }catch(e){ return; }
+    // legend toggles — persist per-series visibility overrides
+    var ovr={}; try{ ovr=JSON.parse(localStorage.getItem('qt_series')||'{}')||{}; }catch(e){}
+    function setSeries(sid,on){
+      document.querySelectorAll('.fseries[data-sid="'+sid+'"]').forEach(function(el){ el.classList.toggle('off',!on); });
+      document.querySelectorAll('.eleg[data-sid="'+sid+'"]').forEach(function(b){ b.classList.toggle('off',!on); b.setAttribute('aria-pressed',on?'true':'false'); });
+    }
+    Object.keys(ovr).forEach(function(sid){ setSeries(sid, !!ovr[sid]); });
+    document.querySelectorAll('.eleg[data-sid]').forEach(function(b){
+      b.addEventListener('click',function(){
+        var sid=b.getAttribute('data-sid'), on=b.classList.contains('off');
+        setSeries(sid,on); ovr[sid]=on?1:0;
+        try{ localStorage.setItem('qt_series',JSON.stringify(ovr)); }catch(e){}
+      });
+    });
+    // crosshair + tooltip
+    var xh=document.getElementById('eq-xh'), hit=document.getElementById('eq-hit');
+    var etip=document.createElement('div'); etip.className='eq-tip'; document.body.appendChild(etip);
+    function visible(sid){ var el=document.querySelector('.fseries[data-sid="'+sid+'"]');
+      return !el || !el.classList.contains('off'); }
+    function fmt(v){ return v==null?null:(v>=100?'+':'−')+Math.abs(v-100).toFixed(1)+'%'; }
+    function show(ev){
+      var r=svg.getBoundingClientRect(), sx=760/r.width;
+      var vx=(ev.clientX-r.left)*sx;
+      var i=Math.round((vx-D.x0)/((D.x1-D.x0)/Math.max(1,D.n-1)));
+      i=Math.max(0,Math.min(D.n-1,i));
+      var cx=D.x0+i*(D.x1-D.x0)/Math.max(1,D.n-1);
+      xh.setAttribute('x1',cx); xh.setAttribute('x2',cx); xh.setAttribute('opacity','0.55');
+      var rows='';
+      D.series.forEach(function(s){
+        if(s.id!=='strategy'&&s.id!=='spy'&&!visible(s.id)) return;
+        var v=s.vals[i]; if(v==null) return;
+        rows+='<div class="r"><i style="background:'+s.css+'"></i>'+esc(s.label)+'<b>'+v.toFixed(1)+' · '+fmt(v)+'</b></div>';
+      });
+      if(!rows){ hide(); return; }
+      etip.innerHTML='<div class="d">'+esc(D.dates[i]||'')+'</div>'+rows;
+      etip.style.opacity='1';
+      var tw=etip.offsetWidth, left=ev.clientX+14;
+      if(left+tw>innerWidth-8) left=ev.clientX-tw-14;
+      etip.style.left=Math.max(8,left)+'px';
+      var top=Math.max(8,ev.clientY-12);
+      top=Math.min(top, innerHeight-etip.offsetHeight-8);
+      etip.style.top=top+'px';
+    }
+    function hide(){ etip.style.opacity='0'; xh.setAttribute('opacity','0'); }
+    hit.addEventListener('mousemove',show);
+    hit.addEventListener('mouseleave',hide);
+  })();
+
   // ── scroll-spy + back-to-top ──
   var links={}; document.querySelectorAll('#qtnav [data-jump]').forEach(function(a){ links[a.getAttribute('data-jump')]=a; });
   var ids=Object.keys(links);
   var secs=ids.map(function(id){ return {id:id, el:document.getElementById(id)}; }).filter(function(s){ return s.el; });
   var btn=document.createElement('button'); btn.className='qt-totop'; btn.textContent='↑';
   btn.setAttribute('aria-label','Back to top'); document.body.appendChild(btn);
-  btn.addEventListener('click',function(){ try{scrollTo({top:0,behavior:'smooth'});}catch(e){scrollTo(0,0);} });
+  var noMotion=false; try{ noMotion=matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+  btn.addEventListener('click',function(){ try{scrollTo({top:0,behavior:noMotion?'auto':'smooth'});}catch(e){scrollTo(0,0);} });
   var curId=null;
   function onScroll(){ var on=scrollY>500; btn.style.opacity=on?'1':'0'; btn.style.pointerEvents=on?'auto':'none';
     var cur=secs.length?secs[0].id:null;
@@ -1147,6 +1458,12 @@ _PAGE_JS = r"""(function(){
     try{ sessionStorage.setItem('qt_scroll', String(scrollY)); }catch(e){}
     try{ location.reload(); }catch(e){}
   }, 15*60*1000);
+  // countdown chip beside the footer note (page loaded → next tick in 15m)
+  var born=Date.now(), cd=document.getElementById('qt-count');
+  if(cd) setInterval(function(){
+    var left=Math.max(0, 15-Math.floor((Date.now()-born)/60000));
+    cd.textContent=' Next refresh in ~'+left+' min.';
+  }, 20000);
 })();"""
 
 
@@ -1156,6 +1473,11 @@ _STYLE = """
   --border:#232c3b; --border-soft:#1a222f; --text:#e7ebf3; --text2:#c2cad9; --muted:#98a1b3; --muted2:#767f92;
   --pos:#3fc17d; --pos-dim:#14301f; --pos-line:#1f5738; --neg:#f0595c; --neg-dim:#33161a; --neg-line:#6b2529;
   --accent:#5b9dff; --warn:#e2b23f; --warn-dim:#2c2410;
+  --regime:var(--warn);
+  /* Fleet series slots — validated categorical steps for THIS surface (dataviz
+     six-checks, dark band); light mode re-steps the same hues below. Slot 1
+     (blue) is reserved for the flagship --accent. */
+  --s2:#199e70; --s3:#c98500; --s4:#008300; --s5:#9085e9; --s6:#e66767; --s7:#d55181; --s8:#d95926;
   --shadow:0 1px 2px #0007, 0 10px 28px #0005;
   --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -1166,6 +1488,7 @@ html[data-theme="light"]{
   --border:#d7dee8; --border-soft:#e7ecf3; --text:#131a24; --text2:#3a4453; --muted:#5b6472;
   --muted2:#8791a1; --pos:#1a9d5c; --pos-dim:#dcf5e7; --pos-line:#a9e0c2; --neg:#d63b3f; --neg-dim:#fbe3e4; --neg-line:#f2b8ba;
   --accent:#2f6fd6; --warn:#b8860b; --warn-dim:#f7edd0;
+  --s2:#1baf7a; --s3:#eda100; --s4:#008300; --s5:#4a3aa7; --s6:#e34948; --s7:#e87ba4; --s8:#eb6834;
   --shadow:0 1px 2px #0000001a, 0 8px 22px #0000001f; color-scheme:light;
 }
 *{box-sizing:border-box;}
@@ -1216,7 +1539,7 @@ nav#qtnav a{color:var(--muted);text-decoration:none;padding:5px 11px;border-radi
 nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600;}
 /* verdict */
 .verdict{position:relative;overflow:hidden;background:linear-gradient(160deg,var(--surface2),var(--surface));border:1px solid var(--border);border-radius:16px;padding:22px 24px;margin-bottom:20px;box-shadow:var(--shadow);scroll-margin-top:64px;}
-.verdict-bar{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--warn);}
+.verdict-bar{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--regime);}
 .eyebrow{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2);}
 .eyebrow .rule,.zone-h .rule{height:1px;flex:1;background:var(--border-soft);}
 .verdict-h{margin:6px 0 10px;font-size:22px;font-weight:600;line-height:1.25;}
@@ -1234,13 +1557,22 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .autobar.pos{background:var(--pos-dim);border:1px solid var(--pos-line);color:var(--pos);}
 .autobar.neg{background:var(--neg-dim);border:1px solid var(--neg-line);color:var(--neg);}
 .autobar.warn{background:var(--warn-dim);border:1px solid var(--warn);color:var(--warn);}
+/* status strip (healthy-state whisper; failures still use full banners) */
+.statusbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px;}
+.schip{display:inline-flex;align-items:center;gap:6px;font-size:12px;border-radius:999px;padding:4px 12px;background:var(--pos-dim);border:1px solid var(--pos-line);color:var(--pos);}
+.schip b{color:var(--text2);font-weight:500;}
+/* signal-lab lifecycle dots + weight chips */
+.lcs{margin-left:8px;letter-spacing:2px;font-size:10px;}
+.lc.pos{color:var(--pos);} .lc.neg{color:var(--neg);} .lc.muted2{color:var(--muted2);}
+.wchip{display:inline-flex;align-items:center;gap:5px;background:var(--inset);border:1px solid var(--border-soft);border-radius:999px;padding:2px 9px;margin:0 4px 2px 0;font-size:11.5px;}
 /* cards + zones */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow);}
 .card.scroll-x{overflow-x:auto;}
 .card h3{margin:0 0 4px;font-size:16px;font-weight:600;}
 .card-hd{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px;}
 .hint{font-size:12px;color:var(--muted2);}
-.zone-h{display:flex;align-items:center;gap:10px;margin:4px 0 14px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);scroll-margin-top:60px;}
+.zone-h{display:flex;align-items:center;gap:10px;margin:22px 0 14px;font-size:12.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--text2);scroll-margin-top:60px;}
+.zone-h::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--regime);opacity:.75;flex:0 0 auto;}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:8px;}
 .callout{margin:12px 0 0;font-size:12.5px;color:var(--muted);background:var(--inset);border-radius:8px;padding:9px 11px;}
 .empty{color:var(--muted);font-size:14px;padding:8px 0;}
@@ -1252,17 +1584,26 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .eq-legend span{display:inline-flex;align-items:center;gap:6px;color:var(--text2);}
 .lg-strat{width:16px;height:3px;border-radius:2px;background:var(--accent);}
 .lg-spy{width:16px;height:0;border-top:2px dashed var(--muted);}
-.elegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:11.5px;}
-.eleg{display:inline-flex;align-items:center;gap:5px;color:var(--muted);}
+.elegend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:11.5px;}
+.eleg{all:unset;display:inline-flex;align-items:center;gap:5px;color:var(--muted);cursor:pointer;padding:2px 6px;border-radius:6px;}
+.eleg:hover{background:var(--raise);color:var(--text2);}
+.eleg:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 .eleg i{width:12px;height:3px;border-radius:2px;display:inline-block;}
+.eleg.off{opacity:.38;} .eleg.off i{background:var(--muted2)!important;}
+.fseries.off{opacity:0;pointer-events:none;}
+.eq-tip{position:fixed;z-index:9100;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:9px 11px;box-shadow:0 8px 26px #000a;font:11.5px/1.6 var(--mono);color:var(--text2);pointer-events:none;opacity:0;transition:opacity .08s;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.eq-tip .d{color:var(--muted);margin-bottom:2px;}
+.eq-tip .r{display:flex;align-items:center;gap:6px;}
+.eq-tip .r i{width:9px;height:3px;border-radius:2px;display:inline-block;flex:0 0 auto;}
+.eq-tip .r b{margin-left:auto;color:var(--text);font-weight:600;padding-left:12px;}
 /* KPIs */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:13px;margin-bottom:14px;}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:15px 16px;box-shadow:var(--shadow);}
 .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
-.kpi-val{font-size:24px;font-weight:600;margin-top:8px;}
+.kpi-val{font-size:24px;font-weight:600;margin-top:8px;font-variant-numeric:tabular-nums;}
 .kpi-sub{font-size:11px;color:var(--muted2);margin-top:3px;}
 /* tables */
-.tbl{width:100%;border-collapse:collapse;font-size:14px;}
+.tbl{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums;}
 .tbl th{text-align:left;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--border-soft);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
 .tbl th.right{text-align:right;}
 .tbl td{padding:8px;border-bottom:1px solid var(--border-soft);}
@@ -1279,7 +1620,7 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:11px;}
 .stats.two{grid-template-columns:1fr 1fr;}
 .stat{background:var(--inset);border:1px solid var(--border-soft);border-radius:11px;padding:12px 13px;}
-.stat-v{font-size:21px;font-weight:600;}
+.stat-v{font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;}
 .stat-l{font-size:11.5px;color:var(--muted);margin-top:3px;}
 /* picks */
 .pick{padding:12px 0;border-bottom:1px solid var(--border-soft);}
@@ -1353,7 +1694,29 @@ nav#qtnav a.active{color:var(--accent);background:var(--surface);font-weight:600
 .qt-gex{color:var(--muted)!important;font-size:12.5px!important;}
 .qt-totop{position:fixed;right:20px;bottom:20px;z-index:8000;width:42px;height:42px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:18px;cursor:pointer;box-shadow:0 6px 20px #0006;opacity:0;pointer-events:none;transition:opacity .15s;}
 footer{color:var(--muted2);font-size:12px;margin-top:28px;border-top:1px solid var(--border-soft);padding-top:14px;line-height:1.6;}
-@media (max-width:520px){.shell{padding:18px 13px 60px;} .verdict-h{font-size:19px;} h1{font-size:24px;}}
+@media (max-width:640px){
+  nav#qtnav{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
+  nav#qtnav::-webkit-scrollbar{display:none;}
+}
+@media (max-width:520px){
+  .shell{padding:18px 13px 60px;} .verdict-h{font-size:19px;} h1{font-size:24px;}
+  /* the full-bleed nav must mirror the tighter shell padding or it pokes
+     past the viewport and drags the whole page into horizontal scroll */
+  nav#qtnav{margin:0 -13px 20px;padding:9px 13px;}
+  /* positions: drop Sector + %PORT so the essentials fit without side-scroll */
+  #positions .tbl th:nth-child(2),#positions .tbl td:nth-child(2),
+  #positions .tbl th:nth-child(7),#positions .tbl td:nth-child(7){display:none;}
+  .pbar{width:44px;}
+}
+@media print{
+  :root{--bg:#fff;--surface:#fff;--surface2:#fff;--inset:#f4f4f4;--raise:#fff;
+    --border:#bbb;--border-soft:#ddd;--text:#111;--text2:#333;--muted:#555;--muted2:#777;
+    --shadow:none;color-scheme:light;}
+  nav#qtnav,.toolbar,.qt-totop,#qt-refresh,.eleg,.elegend span{display:none!important;}
+  .card,.verdict,.kpi{box-shadow:none;break-inside:avoid;}
+  .zone-h{break-before:page;}
+  body{font-size:12px;}
+}
 """
 
 
@@ -1378,9 +1741,12 @@ def dashboard_html(data: dict) -> str:
     fleet = _fleet_section(data.get("fleet") or [], names)
     sc = _scorecard_section(data.get("scorecard"))
     sl = _signal_lab_section(data.get("signal_lab") or {})
+    beh = _behavior_section(data.get("behavior"))
+    rig = _rigor_section(data.get("run_cards") or {})
     working_zone = ((_zone_header("working", "Is it working?") + fleet
-                     + f'<div class="grid2">{sc}{sl}</div>')
-                    if (fleet or sc or sl) else "")
+                     + f'<div class="grid2">{sc}{sl}</div>'
+                     + (f'<div class="grid2">{beh}{rig}</div>' if (beh or rig) else ""))
+                    if (fleet or sc or sl or beh or rig) else "")
     # zone: Under the hood — donut + vetoes, then health/sentiment/tournament/copilot
     donut = _sector_donut(sectors)
     vet = _vetoes_section(sectors, summary, names)
@@ -1423,8 +1789,7 @@ def dashboard_html(data: dict) -> str:
         f'<a href="#hud" data-jump="hud">Under the hood</a></nav>'
 
         f'{_verdict_section(data)}'
-        f'{_auto_banner(data.get("last_run") or {})}'
-        f'{_recon_banner(data.get("recon") or {})}'
+        f'{_status_strip(data.get("last_run") or {}, data.get("recon") or {})}'
 
         f'<section id="equity" class="card" style="scroll-margin-top:64px">'
         f'<div class="eq-hd"><div><h3>Strategy vs the market</h3>'
@@ -1440,16 +1805,23 @@ def dashboard_html(data: dict) -> str:
 
         f'{screen_zone}{working_zone}{hud_zone}'
 
-        f'<footer>Auto-generated by quant-tracker — regenerated each run. Paper money, research '
+        f'<footer>{_provenance(data.get("run_cards") or {}, as_of)}'
+        f'Auto-generated by quant-tracker — regenerated each run. Paper money, research '
         f'only — <b class="muted">not financial advice</b>. Auto-refreshes every 15 min '
-        f'(keeps your scroll position); <b>Check for data</b> reloads now.</footer>'
+        f'(keeps your scroll position); <b>Check for data</b> reloads now.'
+        f'<span id="qt-count"></span></footer>'
     )
 
     gloss_json = _gloss.as_json().replace("</", "<\\/")
     script_block = "<script>\n" + _PAGE_JS.replace("__GLOSSARY_JSON__", gloss_json) + "\n</script>"
 
+    # Regime-tinted accent: the whole page carries a subtle hue for the market
+    # state (verdict edge, zone ticks) — bull green, bear red, sideways amber.
+    rlabel = str(regime.get("label", "")).lower()
+    rvar = "pos" if rlabel == "bull" else "neg" if rlabel == "bear" else "warn"
+
     return (
-        '<!DOCTYPE html>\n<html lang="en"><head>\n'
+        f'<!DOCTYPE html>\n<html lang="en" style="--regime:var(--{rvar})"><head>\n'
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         '<title>Quant Tracker — Dashboard</title>\n'
