@@ -14,7 +14,8 @@ def apply_veto(garch_vol: float, mc_loss_prob: float, regime: str) -> dict:
     """Decide whether a stock survives the regime-adjusted veto.
 
     Args:
-        garch_vol: annualized vol from the GARCH signal's metadata.
+        garch_vol: DAILY vol from the GARCH signal's metadata (the caller feeds
+            daily vol and VETO_THRESHOLDS are on the daily scale, ~0.025–0.045).
         mc_loss_prob: tail-loss probability from the Monte Carlo signal.
         regime: ``"bull" | "sideways" | "bear"`` — picks which threshold row.
 

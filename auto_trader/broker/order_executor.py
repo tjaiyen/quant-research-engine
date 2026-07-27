@@ -102,9 +102,15 @@ def submit_order(
             "ORDER_SUBMITTED",
             ticker,
             side.upper(),
-            float(notional or (shares or 0) * 100),
+            # A SELL is a market order with no fill price at submit time; the
+            # old `(shares or 0) * 100` fabricated a $100/share dollar value in
+            # the audit (last vestige of the historic $100 hardcode). Log the
+            # real notional or 0.0 (unknown-at-submit) and keep the share count
+            # in details — the true fill value lands in the ledger post-fill.
+            float(notional or 0.0),
             {
                 "order_id": order.id,
+                "shares": float(shares) if shares is not None else None,
                 "tif": time_in_force,
                 "trigger": trigger_reason,
             },

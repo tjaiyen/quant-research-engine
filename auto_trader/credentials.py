@@ -68,10 +68,19 @@ def use_mock_broker() -> bool:
 def get_alpaca_credentials() -> dict:
     """Return Alpaca credentials for the current mode.
 
-    Live mode has two hard gates that cannot be bypassed by environment
-    manipulation alone — both must be true:
-      1. Paper trading duration >= ``PAPER_TRADE_MIN_MONTHS``
-      2. ``LIVE_TRADING_CONFIRMED=YES_I_UNDERSTAND_REAL_MONEY`` in env
+    Going live is deliberately hard, but it is NOT immune to environment
+    manipulation (an earlier version of this docstring wrongly claimed it was —
+    corrected after a stress test found REQUIRE_PAPER_BEFORE_LIVE=false alone
+    flips can_go_live()). It requires ALL of these, none of which are defaults:
+      1. ``TRADING_MODE=live``
+      2. paper duration >= ``PAPER_TRADE_MIN_MONTHS`` (default 3) — this gate
+         is itself relaxable via ``REQUIRE_PAPER_BEFORE_LIVE`` / a small
+         ``PAPER_TRADE_MIN_MONTHS``; it is defense-in-depth, not a wall
+      3. ``LIVE_TRADING_CONFIRMED=YES_I_UNDERSTAND_REAL_MONEY`` (a long, typed
+         confirmation token — the real deliberate-action gate)
+      4. real live Alpaca keys present
+    The protection is that live capital needs several explicit, non-default env
+    flags set together — not that any single one is un-overridable.
     """
     mode = get_trading_mode()
 
