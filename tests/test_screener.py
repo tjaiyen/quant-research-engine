@@ -345,3 +345,42 @@ def test_signal_insufficient_history_returns_zero(aapl_history: pd.DataFrame):
         out = fn("AAPL", short, horizon=20)
         assert out["score"] == 0.0
         assert out["metadata"].get("error") == "insufficient_history"
+
+
+def test_bear_relaxation_ranks_by_conviction_not_insertion(monkeypatch):
+    """When the bear-regime veto safety-valve fires, the relaxed picks must be
+    ordered by recomputed conviction (signal_scores x blended_weights), not by
+    insertion order — score_stock zeroes composite_score on veto-failed rows,
+    so sorting by composite_score alone ranked a uniformly-0.0 list arbitrarily.
+    """
+    import pandas as pd
+    from screener.engine import industry_ranker as ir
+
+    dummy = pd.DataFrame({"Close": [100.0] * 300})
+    monkeypatch.setattr(ir, "_gather_price_histories",
+                        lambda tks: ({t: dummy for t in tks}, []))
+    monkeypatch.setattr(ir, "_is_tradeable", lambda t: True)
+
+    def fake_score(ticker, regime_data, ph, **kw):
+        arima = {"LOWCONV": 0.10, "HIGHCONV": 0.90}[ticker]
+        return {
+            "ticker": ticker, "composite_score": 0.0, "passed_veto": False,
+            "veto_reason": "GARCH_VOL", "earnings_veto": False,
+            "sentiment_veto": False, "regime": regime_data["regime"],
+            "regime_confidence": 1.0,
+            "signal_scores": {"arima": arima, "kalman": 0.5, "garch": 0.5,
+                              "monte_carlo": 0.5, "sharpe": 0.5},
+            "signal_contributions": {}, "metadata": {},
+            "veto_detail": {"garch_vol": 0.028, "mc_loss_prob": 0.22},
+        }
+    monkeypatch.setattr(ir, "score_stock", fake_score)
+
+    regime = {"regime": "bear", "confidence": 1.0,
+              "blended_weights": {"arima": 0.6, "kalman": 0.1, "garch": 0.1,
+                                  "monte_carlo": 0.1, "sharpe": 0.1}}
+    # LOWCONV inserted FIRST — insertion order would put it on top; conviction
+    # order must put HIGHCONV first.
+    out = ir.rank_industry("Technology", ["LOWCONV", "HIGHCONV"], regime)
+    picks = [s["ticker"] for s in out["passed"]]
+    assert picks[0] == "HIGHCONV", f"expected conviction order, got {picks}"
+    assert out["passed"][0]["composite_score"] > out["passed"][1]["composite_score"]

@@ -191,7 +191,12 @@ def _persist_fill(
     if instr.action == "SELL":
         existing = get_position(instr.ticker)
         if existing is not None:
-            cost_basis = float(existing.get("cost_basis") or filled_avg)
+            # `is not None`, not `or`: a legitimately 0.0 stored cost basis is
+            # falsy and would be silently replaced by the sale price (zeroing
+            # that SELL's realized P&L). Unreachable for a real fill, but the
+            # `or` was the wrong operator for a numeric.
+            cb = existing.get("cost_basis")
+            cost_basis = float(cb) if cb is not None else filled_avg
     elif instr.action == "BUY":
         cost_basis = filled_avg
 

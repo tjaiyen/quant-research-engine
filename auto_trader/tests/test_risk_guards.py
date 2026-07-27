@@ -154,6 +154,29 @@ def test_guard4_single_position_cap(patch_account):
     assert big.amount_usd <= expected_cap
 
 
+def test_guard4_clips_against_existing_holding(patch_account):
+    """A top-up onto an existing position must land the RESULTING position at
+    the cap, not push past it (the guard used to clip only the raw order)."""
+    from auto_trader.config import MAX_SINGLE_STOCK_PCT
+    from auto_trader.risk.exposure_guard import run_all_guards
+
+    pv = 100_000.0
+    cap = pv * MAX_SINGLE_STOCK_PCT          # $6000
+    patch_account(buying_power=pv)
+    # already hold $3000 of X; a $7000 top-up would land at $10k without the fix
+    held = [{"ticker": "X", "shares": 30.0, "current_price": 100.0, "sector": "Tech"}]
+    out = run_all_guards([_instr("X", "BUY", 7_000.0, score=0.7)], held, pv, 60_000.0,
+                         {"regime": "bull", "confidence": 0.9})
+    x = next(i for i in out if i.ticker == "X")
+    assert x.amount_usd <= cap - 3_000.0 + 1e-6   # headroom = $3000
+    # and an already-at-cap position gets clipped to ~0
+    held_full = [{"ticker": "Y", "shares": 60.0, "current_price": 100.0, "sector": "Tech"}]
+    out2 = run_all_guards([_instr("Y", "BUY", 5_000.0, score=0.7)], held_full, pv, 60_000.0,
+                          {"regime": "bull", "confidence": 0.9})
+    y = next((i for i in out2 if i.ticker == "Y"), None)
+    assert y is None or y.amount_usd <= 1e-6
+
+
 # ---------------------------------------------------------------------------
 # Guard 5 — sector exposure cap drops over-budget buys
 # ---------------------------------------------------------------------------

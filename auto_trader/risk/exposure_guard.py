@@ -53,7 +53,7 @@ def run_all_guards(
     instructions = _guard_1_halt_and_drawdown(instructions, portfolio_value)
     instructions = _guard_2_bear_regime(instructions, regime_data)
     instructions = _guard_3_cash_reserve(instructions, available_cash, portfolio_value)
-    instructions = _guard_4_single_position(instructions, portfolio_value)
+    instructions = _guard_4_single_position(instructions, current_positions, portfolio_value)
     instructions = _guard_5_sector_exposure(instructions, current_positions, portfolio_value)
     instructions = _guard_6_max_order_size(instructions)
     instructions = _guard_7_min_score(instructions)
@@ -152,16 +152,29 @@ def _guard_3_cash_reserve(
 
 
 def _guard_4_single_position(
-    instructions: list[TradeInstruction], portfolio_value: float,
+    instructions: list[TradeInstruction],
+    current_positions: list[dict],
+    portfolio_value: float,
 ) -> list[TradeInstruction]:
     max_single = portfolio_value * MAX_SINGLE_STOCK_PCT
+    # Clip against REMAINING headroom (cap − current holding), not the raw
+    # order: a top-up onto an existing position must not push the *resulting*
+    # position over the cap. Previously it clipped only the order, so holding
+    # 3% + a 7% top-up landed at 9% over a 6% cap.
+    held: dict[str, float] = defaultdict(float)
+    for p in current_positions:
+        cp = float(p.get("current_price") or p.get("cost_basis") or 0)
+        held[str(p.get("ticker"))] += float(p.get("shares") or 0) * cp
     for i in instructions:
-        if i.action == "BUY" and i.amount_usd > max_single:
+        if i.action != "BUY":
+            continue
+        headroom = max(0.0, max_single - held.get(i.ticker, 0.0))
+        if i.amount_usd > headroom:
             logger.debug(
-                "GUARD 4: %s clipped $%.2f → $%.2f (single-pos cap)",
-                i.ticker, i.amount_usd, max_single,
+                "GUARD 4: %s clipped $%.2f → $%.2f (single-pos cap, held $%.2f)",
+                i.ticker, i.amount_usd, headroom, held.get(i.ticker, 0.0),
             )
-            i.amount_usd = max_single
+            i.amount_usd = headroom
     return instructions
 
 

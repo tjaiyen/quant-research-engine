@@ -74,9 +74,11 @@ def score_stock(
     results: dict[str, dict] = {}
     for name, fn in SIGNAL_FUNCTIONS:
         results[name] = fn(ticker, price_history, FORECAST_HORIZON_DAYS)
-        # M4: NaN / infinite / out-of-range guard
+        # M4: None / NaN / infinite / out-of-range guard. None must be tested
+        # FIRST — np.isfinite(None) raises TypeError (a signal returning None
+        # would crash the scorer instead of being clamped).
         score = results[name]["score"]
-        if not np.isfinite(score) or not (0.0 <= float(score) <= 1.0):
+        if score is None or not np.isfinite(score) or not (0.0 <= float(score) <= 1.0):
             logger.warning(
                 "%s %s: invalid score=%s — clamping to 0.0", ticker, name, score,
             )

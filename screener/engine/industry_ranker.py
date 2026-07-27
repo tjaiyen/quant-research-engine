@@ -277,6 +277,7 @@ def rank_industry(sector: str, tickers: list[str], regime_data: dict) -> dict:
 
     # Bear-regime veto relaxation (safety valve: avoid empty sector)
     if not passed and BEAR_REGIME_VETO_RELAXATION:
+        _bw = regime_data.get("blended_weights") or {}
         for i in range(VETO_RELAXATION_PASSES):
             multiplier = 1.0 + VETO_RELAXATION_FACTOR * (i + 1)
             base = VETO_THRESHOLDS[regime]
@@ -298,6 +299,18 @@ def rank_industry(sector: str, tickers: list[str], regime_data: dict) -> dict:
                     s_copy = dict(s)
                     s_copy["veto_relaxed"] = True
                     s_copy["relaxation_passes"] = i + 1
+                    # score_stock forces composite_score=0.0 on any veto-failed
+                    # stock, so sorting the relaxed set by composite_score would
+                    # rank a uniformly-0.0 list in insertion order (bug: bear-
+                    # regime picks were arbitrary). Recompute the as-if-passed
+                    # composite from the preserved signal_scores × the regime's
+                    # blended_weights (both carry all 5 EXPECTED_SIGNAL_KEYS and
+                    # the weights sum to 1, so this matches composite_scorer's
+                    # non-veto path).
+                    ss = s.get("signal_scores") or {}
+                    s_copy["composite_score"] = round(sum(
+                        float(ss.get(k, 0.0)) * float(_bw.get(k, 0.0))
+                        for k in ss), 6)
                     relaxed.append(s_copy)
             if relaxed:
                 relaxed.sort(key=lambda x: x["composite_score"], reverse=True)
