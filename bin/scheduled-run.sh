@@ -66,40 +66,43 @@ fail=0
             "assume PT (the monthly buy targets the 6:25-6:28 PT MOO window)." ;;
   esac
 
-  # Off-Drive preflight gate — abort the whole run if store/vault are unsafe.
+  # Off-Drive preflight gate. A doctor-unsafe abort must SURFACE as a failed
+  # run (fail beacon + notification below), NOT `exit` out of this { } group
+  # before the beacon block — that left the dashboard reading the PREVIOUS
+  # run's green while the run actually aborted (stress-test finding, 2026-07).
   if ! run doctor; then
     echo "ABORT: doctor preflight failed (store or vault unsafe)."
-    exit 2
+    fail=1
+  else
+    # Critical steps set fail=1 (surfaced in the exit code); `report` is best-effort.
+    case "$JOB" in
+      weekly)
+        echo "--- seed --refresh ---"; run_retry seed --refresh || { echo "FAIL: seed"; fail=1; }
+        echo "--- screen ---";         run_retry screen        || { echo "FAIL: screen"; fail=1; }
+        echo "--- health ---";         run health              || echo "WARN: health (best-effort)"
+        ;;
+      daily)
+        echo "--- paper monitor ---";  run_retry paper monitor || { echo "FAIL: monitor"; fail=1; }
+        # A single member's hiccup shouldn't paint the automation banner red —
+        # the flagship monitor above is the critical daily step. Fleet cycle
+        # failures on the MONTHLY job DO set fail=1 (missed trades are critical).
+        echo "--- fleet monitor ---";  run fleet monitor       || echo "WARN: fleet monitor had failures"
+        ;;
+      monthly)
+        # Fresh screen first so the buy reads a <10h-old cache (else it aborts stale).
+        echo "--- screen ---";         run_retry screen        || { echo "FAIL: screen"; fail=1; }
+        echo "--- paper cycle ---";    run paper cycle         || { echo "FAIL: cycle"; fail=1; }
+        echo "--- fleet cycle ---";    run fleet cycle         || { echo "FAIL: fleet cycle"; fail=1; }
+        echo "--- paper monitor ---";  run paper monitor       || { echo "FAIL: monitor"; fail=1; }
+        echo "--- fleet monitor ---";  run fleet monitor       || { echo "FAIL: fleet monitor"; fail=1; }
+        ;;
+      *)
+        echo "ERROR: unknown job '$JOB' (expected weekly|daily|monthly)"; fail=1
+        ;;
+    esac
+
+    echo "--- report ---"; run report || echo "WARN: report had errors"
   fi
-
-  # Critical steps set fail=1 (surfaced in the exit code); `report` is best-effort.
-  case "$JOB" in
-    weekly)
-      echo "--- seed --refresh ---"; run_retry seed --refresh || { echo "FAIL: seed"; fail=1; }
-      echo "--- screen ---";         run_retry screen        || { echo "FAIL: screen"; fail=1; }
-      echo "--- health ---";         run health              || echo "WARN: health (best-effort)"
-      ;;
-    daily)
-      echo "--- paper monitor ---";  run_retry paper monitor || { echo "FAIL: monitor"; fail=1; }
-      # A single member's hiccup shouldn't paint the automation banner red —
-      # the flagship monitor above is the critical daily step. Fleet cycle
-      # failures on the MONTHLY job DO set fail=1 (missed trades are critical).
-      echo "--- fleet monitor ---";  run fleet monitor       || echo "WARN: fleet monitor had failures"
-      ;;
-    monthly)
-      # Fresh screen first so the buy reads a <10h-old cache (else it aborts stale).
-      echo "--- screen ---";         run_retry screen        || { echo "FAIL: screen"; fail=1; }
-      echo "--- paper cycle ---";    run paper cycle         || { echo "FAIL: cycle"; fail=1; }
-      echo "--- fleet cycle ---";    run fleet cycle         || { echo "FAIL: fleet cycle"; fail=1; }
-      echo "--- paper monitor ---";  run paper monitor       || { echo "FAIL: monitor"; fail=1; }
-      echo "--- fleet monitor ---";  run fleet monitor       || { echo "FAIL: fleet monitor"; fail=1; }
-      ;;
-    *)
-      echo "ERROR: unknown job '$JOB' (expected weekly|daily|monthly)"; exit 3
-      ;;
-  esac
-
-  echo "--- report ---"; run report || echo "WARN: report had errors"
   echo "=== done: $(/bin/date '+%Y-%m-%d %H:%M:%S') (fail=$fail) ==="
 } >> "$LOG" 2>&1
 

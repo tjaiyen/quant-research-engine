@@ -101,6 +101,16 @@ def run_monthly_cycle() -> dict:
 
     if is_halted():
         logger.error("HALT FLAG ACTIVE — cycle aborted")
+        # Surface it — a halt left set otherwise silently no-ops every monthly
+        # cycle behind a green beacon (stress-test finding). force=True so it
+        # reaches the operator even if routine alerts are muted.
+        try:
+            send_alert("MONTHLY CYCLE aborted — HALT flag active",
+                       "The kill-switch is set, so no buys ran. Clear it "
+                       "(track ... clear-halt) to resume, or leave it if "
+                       "intentional.", force=True)
+        except Exception:
+            pass
         return {"status": "halted"}
 
     cycle_date = get_monthly_cycle_date(MONTHLY_CYCLE_DAY, MONTHLY_CYCLE_WINDOW_DAYS)

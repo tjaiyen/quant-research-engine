@@ -251,7 +251,16 @@ def write_member_cache(member: dict) -> Path:
 def _run_hold_cycle(member: dict) -> dict:
     """SPY buy-hold control: buy once with all cash, then never trade again."""
     from auto_trader.broker.alpaca_client import get_client
+    from auto_trader.credentials import is_halted
     from auto_trader.state.portfolio_db import initialize_db
+
+    # Honor the global kill-switch here too — this is the one order path that
+    # submits directly to the broker client (bypassing order_executor), so
+    # without this check a tripped halt would NOT stop the SPY control book
+    # (stress-test finding). The halt is universal by design.
+    if is_halted():
+        logger.warning("hold member %s: HALT active — skipping buy", member["id"])
+        return {"status": "halted"}
 
     initialize_db()
     client = get_client()
