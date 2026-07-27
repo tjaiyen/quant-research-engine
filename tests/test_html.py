@@ -448,3 +448,22 @@ def test_print_and_countdown_present():
     assert "@media print" in out and 'id="qt-count"' in out
     # pinned refresh strings must survive the countdown addition
     assert "Auto-refreshes every 15 min" in out and "15*60*1000" in out
+
+
+def test_all_candidate_factors_have_glossary_entries():
+    # The runtime completeness gate only catches terms that actually render;
+    # a candidate factor topping the verdict emits a data-term, so every
+    # factor must have a glossary entry regardless of run data (stress-test).
+    from screener.signals.candidate_factors import FACTORS
+    from render import glossary
+    missing = sorted(f for f in FACTORS if f not in glossary.KEYS)
+    assert not missing, f"candidate factors missing glossary entries: {missing}"
+
+
+def test_zero_value_account_not_rendered_as_10k():
+    # $0 total must render as $0.00, not the "$10,000" no-snapshot placeholder.
+    d = _sample_v2()
+    d["latest_snapshot"] = {"total_value": 0.0, "unrealized_pnl": 0.0,
+                            "realized_pnl_ytd": 0.0, "n_positions": 0}
+    out = html.dashboard_html(d)
+    assert "$0.00" in out

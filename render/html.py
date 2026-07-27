@@ -453,7 +453,13 @@ def _verdict_section(data: dict) -> str:
         # When a CANDIDATE factor tops the whole board, say so — that is the
         # decay-vs-discovery story the lab exists to surface.
         best_key = max(sl, key=lambda k: (sl[k].get("ic") or -9), default=None)
-        if best_key and best_key not in _SIGNALS and (sl[best_key].get("ic") or 0) > 0.05:
+        # guard best_key in the glossary before emitting data-term: a candidate
+        # factor with no glossary entry would render a dead tooltip and (worse)
+        # slip past the runtime completeness gate, which only sees terms that
+        # actually render. No entry -> plain text, no data-term (stress-test).
+        if (best_key and best_key not in _SIGNALS
+                and (sl[best_key].get("ic") or 0) > 0.05
+                and best_key in _gloss.GLOSSARY):
             bplain = _gloss.GLOSSARY.get(best_key, {}).get("plain", best_key)
             sig_clause += (f' The strongest signal right now is '
                            f'<b class="pos"><span class="term" data-term="{_esc(best_key)}">'
@@ -665,7 +671,7 @@ def _kpis(data: dict) -> str:
     n_pos = snap.get("n_positions", len(data.get("positions") or []))
     cash = snap.get("cash")
     cards = [
-        ("paper_value", money(total) if total else "$10,000", "paper money", "text",
+        ("paper_value", money(total) if total is not None else "$10,000", "paper money", "text",
          "What the make-believe $10,000 account is worth right now. No real money is used."),
         ("total_pnl",
          (f'{_arrow(pnl)} {money(pnl)}' if pnl is not None else "$0.00"),

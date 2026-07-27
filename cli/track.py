@@ -457,8 +457,11 @@ def cmd_signal_lab(args: argparse.Namespace) -> int:
             # silently swallow a KeyError and stale the Signal-Lab card)
             "lifecycle": {
                 "years": data["lifecycle"].get("years", []),
-                "signals": {s: {y: {"category": c.get("category")}
-                                for y, c in cells.items()}
+                # per-cell (c or {}) / (cells or {}): a None cell or signal must
+                # drop only its dot, not raise and take the WHOLE sidecar down
+                # via the outer except (which would stale the Signal-Lab card).
+                "signals": {s: {y: {"category": (c or {}).get("category")}
+                                for y, c in (cells or {}).items()}
                             for s, cells in data["lifecycle"].get("signals", {}).items()},
             }}))
     except Exception as exc:

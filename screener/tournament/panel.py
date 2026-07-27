@@ -48,7 +48,17 @@ def build_signal_panel(years: int = 3, rebalance: str = "quarter",
     key = {"years": years, "rebalance": rebalance, "max_per_sector": max_per_sector,
            "regime_mode": os.getenv("REGIME_LABEL_MODE", "composite")}
     if CANDIDATE_FACTORS_ENABLED:
-        key["candidate_factors"] = True
+        # Key on the factor IDENTITY, not just `True`: with the flag already on,
+        # editing candidate_factors.FACTORS (add/remove/rename) would otherwise
+        # leave the key unchanged and serve a stale panel whose rows carry the
+        # OLD factor columns — silently feeding wrong columns to signal-lab /
+        # tournament (stress-test finding). The sorted name list changes the
+        # key whenever the factor set does.
+        try:
+            from screener.signals.candidate_factors import FACTORS
+            key["candidate_factors"] = sorted(FACTORS)
+        except Exception:
+            key["candidate_factors"] = True
     if use_cache and cache_path.exists():
         try:
             cached = json.loads(cache_path.read_text())
